@@ -33,12 +33,12 @@ This project was created to practice and showcase real-world implementation of:
 
 1. Install dependencies:
 
-bash
+````bash
 npm install
 
 2. Deploy to AWS:
 
-bash
+```bash
 npm run deploy
 
 ## Testing
@@ -54,3 +54,4 @@ Import the Insomnia collection from the `docs` folder to test the API endpoints.
 - DELETE /users/{id} - Delete user
 
 For detailed documentation, see [API Documentation](docs/README.md)
+````

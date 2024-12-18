@@ -13,7 +13,7 @@
 
 - **POST** `/users`
 
-json
+````json
 {
 "name": "Teste User",
 "email": "test1@email.com"
@@ -23,6 +23,7 @@ json
 
 - **PUT** `/users/{id}`
 
+```json
 {
 "name": "Teste User 2",
 "email": "test2@email.com"
@@ -44,7 +45,7 @@ json
 
 ### Create User Response
 
-json
+```json
 {
 "id": "550e8400-e29b-41d4-a716-446655440000",
 "name": "Test User",
@@ -55,7 +56,7 @@ json
 
 ### Get/List Users Response
 
-json
+```json
 {
 "id": "550e8400-e29b-41d4-a716-446655440000",
 "name": "Test User",
@@ -66,7 +67,7 @@ json
 
 ### Update User Response
 
-json
+```json
 {
 "id": "550e8400-e29b-41d4-a716-446655440000",
 "name": "Test User 2",
@@ -78,3 +79,4 @@ json
 ### Delete User Response
 
 - Status: 204 No Content
+````
