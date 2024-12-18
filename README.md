@@ -28,5 +28,3 @@ This project was created to practice and showcase real-world implementation of:
 - DynamoDB Integration
 - Error Handling
 - Input Validation
-
-## Project Structure
