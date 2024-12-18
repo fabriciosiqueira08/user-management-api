@@ -1,0 +1,22 @@
+# Dependências
+node_modules/
+
+# Arquivos de build
+.serverless/
+
+# Arquivos de ambiente
+.env
+
+# Logs
+*.log
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Arquivos de IDE/Editor
+.idea/
+.vscode/
+*.swp
+*.swo 
+node_modules

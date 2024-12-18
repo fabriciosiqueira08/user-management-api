@@ -1,0 +1,26 @@
+{
+  "name": "user-management-api",
+  "version": "1.0.0",
+  "description": "Serverless CRUD API with AWS Lambda",
+  "main": "index.js",
+  "scripts": {
+    "deploy": "serverless deploy",
+    "remove": "serverless remove"
+  },
+  "keywords": [
+    "aws",
+    "lambda",
+    "serverless",
+    "crud"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.714.0",
+    "@aws-sdk/lib-dynamodb": "^3.714.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "serverless": "^3.0.0"
+  }
+}

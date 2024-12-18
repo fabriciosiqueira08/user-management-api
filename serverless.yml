@@ -1,0 +1,97 @@
+service: user-api-v2
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  region: us-east-2
+  environment:
+    USERS_TABLE: ${self:custom.tableName}
+  iamRoleStatements:
+    # Permissões DynamoDB
+    - Effect: Allow
+      Action:
+        - dynamodb:PutItem
+        - dynamodb:GetItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - dynamodb:Scan
+      Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tableName}
+
+    # Permissões CloudWatch Logs
+    - Effect: Allow
+      Action:
+        - logs:CreateLogGroup
+        - logs:CreateLogStream
+        - logs:PutLogEvents
+        - logs:TagResource
+        - logs:UntagResource
+      Resource:
+        - "arn:aws:logs:${self:provider.region}:${aws:accountId}:*"
+
+    # Permissões IAM (para as funções Lambda)
+    - Effect: Allow
+      Action:
+        - iam:CreateRole
+        - iam:DeleteRole
+        - iam:GetRole
+        - iam:PutRolePolicy
+        - iam:DeleteRolePolicy
+        - iam:PassRole
+        - iam:TagRole
+        - iam:UntagRole
+      Resource: "arn:aws:iam::${aws:accountId}:role/*"
+
+custom:
+  tableName: users-table-${sls:stage}
+
+functions:
+  createUser:
+    handler: src/handlers/createUser.handler
+    events:
+      - http:
+          path: users
+          method: post
+
+  getUser:
+    handler: src/handlers/getUser.handler
+    events:
+      - http:
+          path: users/{id}
+          method: get
+
+  updateUser:
+    handler: src/handlers/updateUser.handler
+    events:
+      - http:
+          path: users/{id}
+          method: put
+
+  deleteUser:
+    handler: src/handlers/deleteUser.handler
+    events:
+      - http:
+          path: users/{id}
+          method: delete
+
+  listUsers:
+    handler: src/handlers/listUsers.handler
+    events:
+      - http:
+          path: users
+          method: get
+
+resources:
+  Resources:
+    UsersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:custom.tableName}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST
