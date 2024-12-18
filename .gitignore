@@ -18,5 +18,5 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-*.swo 
-node_modules
+*.swo
+- node_modules

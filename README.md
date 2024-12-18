@@ -28,3 +28,29 @@ This project was created to practice and showcase real-world implementation of:
 - DynamoDB Integration
 - Error Handling
 - Input Validation
+
+## Setup
+
+1. Install dependencies:
+
+bash
+npm install
+
+2. Deploy to AWS:
+
+bash
+npm run deploy
+
+## Testing
+
+Import the Insomnia collection from the `docs` folder to test the API endpoints.
+
+## Available Endpoints
+
+- POST /users - Create user
+- GET /users - List all users
+- GET /users/{id} - Get specific user
+- PUT /users/{id} - Update user
+- DELETE /users/{id} - Delete user
+
+For detailed documentation, see [API Documentation](docs/README.md)
