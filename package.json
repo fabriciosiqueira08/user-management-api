@@ -10,7 +10,6 @@
     "cognito:signup": "node src/scripts/signUpUser.js",
     "cognito:signup-user": "node src/scripts/signUpUser.js",
     "cognito:confirm-user": "node src/scripts/confirmUser.js",
-    "cognito:help": "node src/scripts/help.js",
     "test:api": "node src/scripts/testApi.js",
     "api:url": "node src/scripts/getApiUrl.js"
   },
