@@ -5,9 +5,13 @@ frameworkVersion: "3"
 provider:
   name: aws
   runtime: nodejs18.x
-  region: us-east-2
+  region: us-east-1
   environment:
     USERS_TABLE: ${self:custom.tableName}
+    USER_POOL_ID:
+      Ref: CognitoUserPool
+    USER_POOL_CLIENT_ID:
+      Ref: CognitoUserPoolClient
   iamRoleStatements:
     # Permissões DynamoDB
     - Effect: Allow
@@ -19,40 +23,59 @@ provider:
         - dynamodb:Scan
       Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${self:custom.tableName}
 
-    # Permissões CloudWatch Logs
+    # Permissões Cognito
     - Effect: Allow
       Action:
-        - logs:CreateLogGroup
-        - logs:CreateLogStream
-        - logs:PutLogEvents
-        - logs:TagResource
-        - logs:UntagResource
+        - cognito-idp:AdminCreateUser
+        - cognito-idp:AdminGetUser
+        - cognito-idp:AdminUpdateUserAttributes
+        - cognito-idp:AdminDeleteUser
+        - cognito-idp:ListUsers
+        - cognito-idp:AdminSetUserPassword
+        - cognito-idp:AdminInitiateAuth
+        - cognito-idp:AdminRespondToAuthChallenge
+        - cognito-idp:GlobalSignOut
+        - cognito-idp:AdminAddUserToGroup
+        - cognito-idp:CreateGroup
+        - cognito-idp:ListGroups
       Resource:
-        - "arn:aws:logs:${self:provider.region}:${aws:accountId}:*"
-
-    # Permissões IAM (para as funções Lambda)
-    - Effect: Allow
-      Action:
-        - iam:CreateRole
-        - iam:DeleteRole
-        - iam:GetRole
-        - iam:PutRolePolicy
-        - iam:DeleteRolePolicy
-        - iam:PassRole
-        - iam:TagRole
-        - iam:UntagRole
-      Resource: "arn:aws:iam::${aws:accountId}:role/*"
+        Fn::GetAtt: [CognitoUserPool, Arn]
 
 custom:
   tableName: users-table-${sls:stage}
 
 functions:
+  login:
+    handler: src/handlers/auth.login
+    events:
+      - http:
+          path: auth/login
+          method: post
+          cors: true
+
+  refreshToken:
+    handler: src/handlers/auth.refreshToken
+    events:
+      - http:
+          path: auth/refresh-token
+          method: post
+          cors: true
+
   createUser:
     handler: src/handlers/createUser.handler
     events:
       - http:
           path: users
           method: post
+          cors: true
+
+  confirmUser:
+    handler: src/handlers/confirmUser.handler
+    events:
+      - http:
+          path: auth/confirm
+          method: post
+          cors: true
 
   getUser:
     handler: src/handlers/getUser.handler
@@ -60,6 +83,7 @@ functions:
       - http:
           path: users/{id}
           method: get
+          cors: true
 
   updateUser:
     handler: src/handlers/updateUser.handler
@@ -67,6 +91,7 @@ functions:
       - http:
           path: users/{id}
           method: put
+          cors: true
 
   deleteUser:
     handler: src/handlers/deleteUser.handler
@@ -74,6 +99,7 @@ functions:
       - http:
           path: users/{id}
           method: delete
+          cors: true
 
   listUsers:
     handler: src/handlers/listUsers.handler
@@ -81,6 +107,22 @@ functions:
       - http:
           path: users
           method: get
+          cors: true
+
+  logout:
+    handler: src/handlers/auth.logoutHandler
+    events:
+      - http:
+          path: auth/logout
+          method: post
+          cors: true
+
+  makeAdmin:
+    handler: src/handlers/makeAdmin.handler
+    events:
+      - http:
+          path: users/make-admin
+          method: post
 
 resources:
   Resources:
@@ -95,3 +137,57 @@ resources:
           - AttributeName: id
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
+
+    CognitoUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:service}-user-pool-${sls:stage}
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        EmailConfiguration:
+          EmailSendingAccount: COGNITO_DEFAULT
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: true
+            RequireUppercase: true
+        Schema:
+          - Name: email
+            AttributeDataType: String
+            Mutable: true
+            Required: true
+          - Name: name
+            AttributeDataType: String
+            Mutable: true
+            Required: true
+        VerificationMessageTemplate:
+          DefaultEmailOption: CONFIRM_WITH_CODE
+          EmailMessage: "Seu código de verificação é {####}"
+          EmailSubject: "Código de Verificação"
+
+    CognitoUserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: ${self:service}-user-pool-client-${sls:stage}
+        UserPoolId:
+          Ref: CognitoUserPool
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+          - ALLOW_USER_SRP_AUTH
+        GenerateSecret: false
+        PreventUserExistenceErrors: ENABLED
+
+  Outputs:
+    UserPoolId:
+      Value:
+        Ref: CognitoUserPool
+      Description: ID do Cognito User Pool
+    UserPoolClientId:
+      Value:
+        Ref: CognitoUserPoolClient
+      Description: ID do Client do User Pool

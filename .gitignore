@@ -1,14 +1,17 @@
 # Dependências
 node_modules/
+jspm_packages/
 
 # Arquivos de build
 .serverless/
 
 # Arquivos de ambiente
 .env
+.env.*
 
 # Logs
 *.log
+npm-debug.log*
 
 # Arquivos do sistema
 .DS_Store
@@ -20,3 +23,9 @@ Thumbs.db
 *.swp
 *.swo
 - node_modules
+
+# assistant snippets
+assistant_snippet_*.txt
+
+# misc
+*.pem

@@ -3,42 +3,62 @@ const {
   DynamoDBDocumentClient,
   UpdateCommand,
 } = require("@aws-sdk/lib-dynamodb");
+const { protected } = require("../middleware/authMiddleware");
+const { updateCognitoUser } = require("../services/cognitoService");
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-module.exports.handler = async (event) => {
+const updateUserHandler = async (event) => {
   try {
-    const { id } = event.pathParameters;
-    const data = JSON.parse(event.body);
-    const timestamp = new Date().getTime();
+    const userId = event.pathParameters.id;
+    const { name, email } = JSON.parse(event.body);
 
-    const command = new UpdateCommand({
+    // Verifica se o usuário tem permissão (apenas o próprio usuário ou admin)
+    if (event.user.sub !== userId && !event.user.groups.includes("admin")) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({ message: "Acesso negado" }),
+      };
+    }
+
+    // Atualizar usuário no Cognito
+    await updateCognitoUser(userId, { name, email });
+
+    // Atualizar usuário no DynamoDB
+    const params = {
       TableName: process.env.USERS_TABLE,
-      Key: { id },
+      Key: { id: userId },
       UpdateExpression:
         "set #name = :name, email = :email, updatedAt = :updatedAt",
       ExpressionAttributeNames: {
         "#name": "name",
       },
       ExpressionAttributeValues: {
-        ":name": data.name,
-        ":email": data.email,
-        ":updatedAt": timestamp,
+        ":name": name,
+        ":email": email,
+        ":updatedAt": new Date().toISOString(),
       },
       ReturnValues: "ALL_NEW",
-    });
+    };
 
-    const { Attributes } = await docClient.send(command);
+    const command = new UpdateCommand(params);
+    const result = await docClient.send(command);
 
     return {
       statusCode: 200,
-      body: JSON.stringify(Attributes),
+      body: JSON.stringify(result.Attributes),
     };
   } catch (error) {
+    console.error("Erro ao atualizar usuário:", error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Could not update user" }),
+      body: JSON.stringify({ message: "Erro ao atualizar usuário" }),
     };
   }
+};
+
+// Exporta o handler protegido com autenticação
+module.exports = {
+  handler: protected(updateUserHandler),
 };

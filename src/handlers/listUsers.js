@@ -3,16 +3,28 @@ const {
   DynamoDBDocumentClient,
   ScanCommand,
 } = require("@aws-sdk/lib-dynamodb");
+const { protected } = require("../middleware/authMiddleware");
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-module.exports.handler = async () => {
+const listUsersHandler = async (event) => {
   try {
-    const command = new ScanCommand({
-      TableName: process.env.USERS_TABLE,
-    });
+    // Verifica se o usuário tem permissão (apenas admins podem listar todos os usuários)
+    if (!event.user.groups.includes("admin")) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          message: "Apenas administradores podem listar todos os usuários",
+        }),
+      };
+    }
 
+    const params = {
+      TableName: process.env.USERS_TABLE,
+    };
+
+    const command = new ScanCommand(params);
     const result = await docClient.send(command);
 
     return {
@@ -20,9 +32,15 @@ module.exports.handler = async () => {
       body: JSON.stringify(result.Items),
     };
   } catch (error) {
+    console.error("Erro ao listar usuários:", error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: "Could not list users" }),
+      body: JSON.stringify({ message: "Erro ao listar usuários" }),
     };
   }
+};
+
+// Exporta o handler protegido com autenticação
+module.exports = {
+  handler: protected(listUsersHandler),
 };
