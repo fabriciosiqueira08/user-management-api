@@ -1,17 +1,18 @@
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const {
-  DynamoDBDocumentClient,
-  ScanCommand,
-} = require("@aws-sdk/lib-dynamodb");
-const { protected } = require("../middleware/authMiddleware");
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { authenticate } from "../middleware/authMiddleware";
+import { AuthenticatedEvent } from "../types";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-const listUsersHandler = async (event) => {
+const listUsersHandler = async (
+  event: APIGatewayProxyEvent | AuthenticatedEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    // Verifica se o usuário tem permissão (apenas admins podem listar todos os usuários)
-    if (!event.user.groups.includes("admin")) {
+    const authEvent = event as AuthenticatedEvent;
+    if (!authEvent.user?.isAdmin) {
       return {
         statusCode: 403,
         body: JSON.stringify({
@@ -40,7 +41,4 @@ const listUsersHandler = async (event) => {
   }
 };
 
-// Exporta o handler protegido com autenticação
-module.exports = {
-  handler: protected(listUsersHandler),
-};
+export const handler = authenticate(listUsersHandler);

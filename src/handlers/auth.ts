@@ -1,9 +1,10 @@
-const {
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
   GlobalSignOutCommand,
-} = require("@aws-sdk/client-cognito-identity-provider");
-const { protected } = require("../middleware/authMiddleware");
+  AuthFlowType,
+} from "@aws-sdk/client-cognito-identity-provider";
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: "us-east-1",
@@ -11,9 +12,20 @@ const cognitoClient = new CognitoIdentityProviderClient({
 
 const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
 
-const login = async (event) => {
+interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+interface RefreshTokenRequest {
+  refreshToken: string;
+}
+
+const login = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const { email, password } = JSON.parse(event.body);
+    const { email, password } = JSON.parse(event.body || "{}") as LoginRequest;
 
     if (!email || !password) {
       return {
@@ -25,7 +37,7 @@ const login = async (event) => {
     }
 
     const params = {
-      AuthFlow: "USER_PASSWORD_AUTH",
+      AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
       ClientId: CLIENT_ID,
       AuthParameters: {
         USERNAME: email,
@@ -41,26 +53,31 @@ const login = async (event) => {
       body: JSON.stringify({
         message: "Login realizado com sucesso",
         tokens: {
-          idToken: response.AuthenticationResult.IdToken,
-          accessToken: response.AuthenticationResult.AccessToken,
-          refreshToken: response.AuthenticationResult.RefreshToken,
+          accessToken: response.AuthenticationResult?.AccessToken,
+          refreshToken: response.AuthenticationResult?.RefreshToken,
+          idToken: response.AuthenticationResult?.IdToken,
         },
       }),
     };
   } catch (error) {
-    console.error("Erro ao fazer login:", error);
+    console.error("Erro no login:", error);
     return {
-      statusCode: error.statusCode || 500,
+      statusCode: 500,
       body: JSON.stringify({
-        message: error.message || "Erro ao fazer login",
+        message: "Erro ao realizar login",
+        error: (error as Error).message,
       }),
     };
   }
 };
 
-const refreshToken = async (event) => {
+const refreshToken = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const { refreshToken } = JSON.parse(event.body);
+    const { refreshToken } = JSON.parse(
+      event.body || "{}"
+    ) as RefreshTokenRequest;
 
     if (!refreshToken) {
       return {
@@ -72,7 +89,7 @@ const refreshToken = async (event) => {
     }
 
     const params = {
-      AuthFlow: "REFRESH_TOKEN_AUTH",
+      AuthFlow: AuthFlowType.REFRESH_TOKEN_AUTH,
       ClientId: CLIENT_ID,
       AuthParameters: {
         REFRESH_TOKEN: refreshToken,
@@ -85,29 +102,32 @@ const refreshToken = async (event) => {
     return {
       statusCode: 200,
       body: JSON.stringify({
-        message: "Token renovado com sucesso",
+        message: "Token atualizado com sucesso",
         tokens: {
-          idToken: response.AuthenticationResult.IdToken,
-          accessToken: response.AuthenticationResult.AccessToken,
+          accessToken: response.AuthenticationResult?.AccessToken,
+          idToken: response.AuthenticationResult?.IdToken,
         },
       }),
     };
   } catch (error) {
-    console.error("Erro ao renovar token:", error);
+    console.error("Erro ao atualizar token:", error);
     return {
-      statusCode: error.statusCode || 500,
+      statusCode: 500,
       body: JSON.stringify({
-        message: error.message || "Erro ao renovar token",
+        message: "Erro ao atualizar token",
+        error: (error as Error).message,
       }),
     };
   }
 };
 
-const logoutHandler = async (event) => {
+const logoutHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const token = event.headers.Authorization?.split(" ")[1];
+    const accessToken = event.headers.Authorization?.replace("Bearer ", "");
 
-    if (!token) {
+    if (!accessToken) {
       return {
         statusCode: 401,
         body: JSON.stringify({
@@ -117,7 +137,7 @@ const logoutHandler = async (event) => {
     }
 
     const params = {
-      AccessToken: token,
+      AccessToken: accessToken,
     };
 
     const command = new GlobalSignOutCommand(params);
@@ -130,18 +150,19 @@ const logoutHandler = async (event) => {
       }),
     };
   } catch (error) {
-    console.error("Erro ao fazer logout:", error);
+    console.error("Erro no logout:", error);
     return {
-      statusCode: error.statusCode || 500,
+      statusCode: 500,
       body: JSON.stringify({
-        message: error.message || "Erro ao fazer logout",
+        message: "Erro ao realizar logout",
+        error: (error as Error).message,
       }),
     };
   }
 };
 
-module.exports = {
+export const handler = {
   login,
   refreshToken,
-  logoutHandler: protected(logoutHandler),
+  logoutHandler,
 };

@@ -1,13 +1,32 @@
-const { DynamoDBClient } = require("@aws-sdk/client-dynamodb");
-const { DynamoDBDocumentClient, PutCommand } = require("@aws-sdk/lib-dynamodb");
-const { createCognitoUser } = require("../services/cognitoService");
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { createCognitoUser } from "../services/cognitoService";
+
+interface CreateUserRequest {
+  email: string;
+  password: string;
+  name: string;
+}
+
+interface User {
+  id: string;
+  email: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
-const createUserHandler = async (event) => {
+const createUserHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const { email, password, name } = JSON.parse(event.body);
+    const { email, password, name } = JSON.parse(
+      event.body || "{}"
+    ) as CreateUserRequest;
 
     if (!email || !password || !name) {
       return {
@@ -21,11 +40,13 @@ const createUserHandler = async (event) => {
 
     // Criar usuário no Cognito
     const cognitoResponse = await createCognitoUser(email, name, password);
-    const userId = cognitoResponse.UserSub;
+    if (!cognitoResponse.UserSub) {
+      throw new Error("Erro ao criar usuário: ID não gerado");
+    }
 
     // Criar usuário no DynamoDB
-    const user = {
-      id: userId,
+    const user: User = {
+      id: cognitoResponse.UserSub,
       email,
       name,
       createdAt: new Date().toISOString(),
@@ -33,7 +54,7 @@ const createUserHandler = async (event) => {
     };
 
     const params = {
-      TableName: process.env.USERS_TABLE,
+      TableName: process.env.USERS_TABLE!,
       Item: user,
     };
 
@@ -44,7 +65,7 @@ const createUserHandler = async (event) => {
       statusCode: 201,
       body: JSON.stringify(user),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao criar usuário:", {
       message: error.message,
       stack: error.stack,
@@ -63,6 +84,4 @@ const createUserHandler = async (event) => {
   }
 };
 
-module.exports = {
-  handler: createUserHandler,
-};
+export const handler = createUserHandler;

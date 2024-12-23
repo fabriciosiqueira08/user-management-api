@@ -1,4 +1,4 @@
-const {
+import {
   CognitoIdentityProviderClient,
   SignUpCommand,
   ConfirmSignUpCommand,
@@ -8,7 +8,8 @@ const {
   AdminAddUserToGroupCommand,
   CreateGroupCommand,
   ListGroupsCommand,
-} = require("@aws-sdk/client-cognito-identity-provider");
+} from "@aws-sdk/client-cognito-identity-provider";
+import { User } from "../types";
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: "us-east-1",
@@ -17,7 +18,11 @@ const cognitoClient = new CognitoIdentityProviderClient({
 const USER_POOL_ID = process.env.USER_POOL_ID;
 const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
 
-const createCognitoUser = async (email, name, password) => {
+export const createCognitoUser = async (
+  email: string,
+  name: string,
+  password: string
+): Promise<{ UserSub: string }> => {
   if (!CLIENT_ID) {
     throw new Error("USER_POOL_CLIENT_ID não encontrado no arquivo .env");
   }
@@ -35,14 +40,20 @@ const createCognitoUser = async (email, name, password) => {
   try {
     const command = new SignUpCommand(params);
     const response = await cognitoClient.send(command);
-    return response;
+    if (!response.UserSub) {
+      throw new Error("Erro ao criar usuário: ID não gerado");
+    }
+    return { UserSub: response.UserSub };
   } catch (error) {
     console.error("Erro ao criar usuário no Cognito:", error);
     throw error;
   }
 };
 
-const confirmSignUp = async (email, code) => {
+export const confirmSignUp = async (
+  email: string,
+  code: string
+): Promise<void> => {
   const params = {
     ClientId: CLIENT_ID,
     Username: email,
@@ -50,32 +61,56 @@ const confirmSignUp = async (email, code) => {
   };
 
   try {
-    const command = new ConfirmSignUpCommand(params);
-    const response = await cognitoClient.send(command);
-    return response;
+    await cognitoClient.send(new ConfirmSignUpCommand(params));
   } catch (error) {
     console.error("Erro ao confirmar usuário no Cognito:", error);
     throw error;
   }
 };
 
-const getCognitoUser = async (username) => {
+export const getCognitoUser = async (username: string): Promise<User> => {
   const params = {
     UserPoolId: USER_POOL_ID,
     Username: username,
   };
 
   try {
-    const command = new AdminGetUserCommand(params);
-    const response = await cognitoClient.send(command);
-    return response;
+    const response = await cognitoClient.send(new AdminGetUserCommand(params));
+    const attributes = response.UserAttributes || [];
+
+    const user: User = {
+      email: "",
+      name: "",
+    };
+
+    attributes.forEach((attr) => {
+      switch (attr.Name) {
+        case "email":
+          user.email = attr.Value || "";
+          break;
+        case "name":
+          user.name = attr.Value;
+          break;
+        case "sub":
+          user.sub = attr.Value;
+          break;
+        case "custom:isAdmin":
+          user.isAdmin = attr.Value === "true";
+          break;
+      }
+    });
+
+    return user;
   } catch (error) {
     console.error("Erro ao buscar usuário no Cognito:", error);
     throw error;
   }
 };
 
-const updateCognitoUser = async (username, attributes) => {
+export const updateCognitoUser = async (
+  username: string,
+  attributes: Record<string, string>
+): Promise<void> => {
   const params = {
     UserPoolId: USER_POOL_ID,
     Username: username,
@@ -86,31 +121,28 @@ const updateCognitoUser = async (username, attributes) => {
   };
 
   try {
-    const command = new AdminUpdateUserAttributesCommand(params);
-    const response = await cognitoClient.send(command);
-    return response;
+    await cognitoClient.send(new AdminUpdateUserAttributesCommand(params));
   } catch (error) {
     console.error("Erro ao atualizar usuário no Cognito:", error);
     throw error;
   }
 };
 
-const deleteCognitoUser = async (username) => {
+export const deleteCognitoUser = async (username: string): Promise<void> => {
   const params = {
     UserPoolId: USER_POOL_ID,
     Username: username,
   };
 
   try {
-    const command = new AdminDeleteUserCommand(params);
-    await cognitoClient.send(command);
+    await cognitoClient.send(new AdminDeleteUserCommand(params));
   } catch (error) {
     console.error("Erro ao deletar usuário no Cognito:", error);
     throw error;
   }
 };
 
-const generateTempPassword = () => {
+const generateTempPassword = (): string => {
   const length = 12;
   const charset =
     "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -122,13 +154,16 @@ const generateTempPassword = () => {
   return password;
 };
 
-const addUserToGroup = async (username, groupName) => {
+export const addUserToGroup = async (
+  username: string,
+  groupName: string
+): Promise<boolean> => {
   try {
     // Verificar se o grupo existe
     const listGroupsCommand = new ListGroupsCommand({
       UserPoolId: USER_POOL_ID,
     });
-    const { Groups } = await cognitoClient.send(listGroupsCommand);
+    const { Groups = [] } = await cognitoClient.send(listGroupsCommand);
 
     // Se o grupo não existir, criar
     if (!Groups.some((g) => g.GroupName === groupName)) {
@@ -153,13 +188,4 @@ const addUserToGroup = async (username, groupName) => {
     console.error(`Erro ao adicionar usuário ao grupo ${groupName}:`, error);
     throw error;
   }
-};
-
-module.exports = {
-  createCognitoUser,
-  getCognitoUser,
-  updateCognitoUser,
-  deleteCognitoUser,
-  confirmSignUp,
-  addUserToGroup,
 };

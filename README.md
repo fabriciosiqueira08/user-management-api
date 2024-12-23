@@ -11,6 +11,7 @@ This repository serves as a learning project to demonstrate practical knowledge 
 - Serverless Framework
 - Node.js
 - AWS API Gateway
+- TypeScript
 
 ---
 

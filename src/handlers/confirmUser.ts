@@ -1,8 +1,18 @@
-const { confirmSignUp } = require("../services/cognitoService");
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { confirmSignUp } from "../services/cognitoService";
 
-const confirmUserHandler = async (event) => {
+interface ConfirmUserRequest {
+  email: string;
+  code: string;
+}
+
+const confirmUserHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const { email, code } = JSON.parse(event.body);
+    const { email, code } = JSON.parse(
+      event.body || "{}"
+    ) as ConfirmUserRequest;
 
     if (!email || !code) {
       return {
@@ -21,7 +31,7 @@ const confirmUserHandler = async (event) => {
         message: "Email confirmado com sucesso",
       }),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao confirmar usuário:", error);
     return {
       statusCode: error.statusCode || 500,
@@ -32,6 +42,4 @@ const confirmUserHandler = async (event) => {
   }
 };
 
-module.exports = {
-  handler: confirmUserHandler,
-};
+export const handler = confirmUserHandler;

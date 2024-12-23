@@ -1,9 +1,16 @@
-const { addUserToGroup } = require("../services/cognitoService");
-const { protected } = require("../middleware/authMiddleware");
+import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import { addUserToGroup } from "../services/cognitoService";
+import { authenticate } from "../middleware/authMiddleware";
 
-const makeAdminHandler = async (event) => {
+interface MakeAdminRequest {
+  email: string;
+}
+
+const makeAdminHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
   try {
-    const { email } = JSON.parse(event.body);
+    const { email } = JSON.parse(event.body || "{}") as MakeAdminRequest;
 
     if (!email) {
       return {
@@ -22,7 +29,7 @@ const makeAdminHandler = async (event) => {
         message: "Usuário promovido a administrador com sucesso",
       }),
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("Erro ao promover usuário:", error);
     return {
       statusCode: error.statusCode || 500,
@@ -33,6 +40,4 @@ const makeAdminHandler = async (event) => {
   }
 };
 
-module.exports = {
-  handler: protected(makeAdminHandler),
-};
+export const handler = authenticate(makeAdminHandler);
