@@ -1,12 +1,17 @@
-const {
+import {
   CognitoIdentityProviderClient,
   CreateUserPoolCommand,
   CreateUserPoolClientCommand,
-} = require("@aws-sdk/client-cognito-identity-provider");
+  type UserPoolType,
+  type UserPoolClientType,
+  type VerifiedAttributeType,
+  type ExplicitAuthFlowsType,
+  type UserPoolMfaType,
+} from "@aws-sdk/client-cognito-identity-provider";
 
 // Configurar o cliente com a região correta
 const cognitoClient = new CognitoIdentityProviderClient({
-  region: "us-east-1", // Usando a mesma região do erro
+  region: "us-east-1",
 });
 
 const createUserPool = async () => {
@@ -21,14 +26,17 @@ const createUserPool = async () => {
         RequireSymbols: true,
       },
     },
-    AutoVerifiedAttributes: ["email"],
-    UsernameAttributes: ["email"],
-    MfaConfiguration: "OFF",
+    AutoVerifiedAttributes: ["email"] as VerifiedAttributeType[],
+    UsernameAttributes: ["email"] as VerifiedAttributeType[],
+    MfaConfiguration: "OFF" as UserPoolMfaType,
   };
 
   try {
     const command = new CreateUserPoolCommand(params);
     const userPool = await cognitoClient.send(command);
+    if (!userPool.UserPool?.Id) {
+      throw new Error("User Pool ID não foi gerado");
+    }
     console.log("User Pool criado com sucesso:", userPool.UserPool.Id);
     return userPool;
   } catch (error) {
@@ -37,17 +45,23 @@ const createUserPool = async () => {
   }
 };
 
-const createAppClient = async (userPoolId) => {
+const createAppClient = async (userPoolId: string) => {
   const params = {
     ClientName: "MyAppClient",
     UserPoolId: userPoolId,
-    GenerateSecret: false, // Set to false for client-side apps
-    ExplicitAuthFlows: ["ALLOW_USER_SRP_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+    GenerateSecret: false,
+    ExplicitAuthFlows: [
+      "ALLOW_USER_SRP_AUTH",
+      "ALLOW_REFRESH_TOKEN_AUTH",
+    ] as ExplicitAuthFlowsType[],
   };
 
   try {
     const command = new CreateUserPoolClientCommand(params);
     const appClient = await cognitoClient.send(command);
+    if (!appClient.UserPoolClient?.ClientId) {
+      throw new Error("Client ID não foi gerado");
+    }
     console.log(
       "App Client criado com sucesso:",
       appClient.UserPoolClient.ClientId
@@ -60,12 +74,14 @@ const createAppClient = async (userPoolId) => {
 };
 
 // Executar as funções em sequência
-const init = async () => {
+const init = async (): Promise<void> => {
   try {
     const userPoolResult = await createUserPool();
-    const userPoolId = userPoolResult.UserPool.Id;
+    if (!userPoolResult.UserPool?.Id) {
+      throw new Error("User Pool ID não encontrado");
+    }
 
-    const appClientResult = await createAppClient(userPoolId);
+    const appClientResult = await createAppClient(userPoolResult.UserPool.Id);
 
     console.log("Configuração completa:", {
       userPool: {
@@ -74,13 +90,17 @@ const init = async () => {
         arn: userPoolResult.UserPool.Arn,
       },
       appClient: {
-        id: appClientResult.UserPoolClient.ClientId,
-        name: appClientResult.UserPoolClient.ClientName,
+        id: appClientResult.UserPoolClient?.ClientId,
+        name: appClientResult.UserPoolClient?.ClientName,
       },
     });
   } catch (error) {
     console.error("Erro na configuração:", error);
+    process.exit(1);
   }
 };
 
-init();
+// Executar apenas se for o arquivo principal
+if (require.main === module) {
+  init();
+}

@@ -1,17 +1,19 @@
 {
   "name": "user-management-api",
   "version": "1.0.0",
-  "description": "Serverless CRUD API with AWS Lambda",
+  "description": "API de gerenciamento de usuários com AWS Lambda e Cognito",
   "main": "index.js",
   "scripts": {
-    "deploy": "serverless deploy",
+    "build": "tsc",
+    "watch": "tsc -w",
+    "deploy": "npm run build && serverless deploy",
     "remove": "serverless remove",
-    "cognito:create-pool": "node src/scripts/createUserPool.js",
-    "cognito:signup": "node src/scripts/signUpUser.js",
-    "cognito:signup-user": "node src/scripts/signUpUser.js",
-    "cognito:confirm-user": "node src/scripts/confirmUser.js",
-    "test:api": "node src/scripts/testApi.js",
-    "api:url": "node src/scripts/getApiUrl.js"
+    "cognito:create-pool": "ts-node src/scripts/createUserPool.ts",
+    "cognito:signup": "ts-node src/scripts/signUpUser.ts",
+    "cognito:signup-user": "ts-node src/scripts/signUpUser.ts",
+    "cognito:confirm-user": "ts-node src/scripts/confirmUser.ts",
+    "test:api": "ts-node src/scripts/testApi.ts",
+    "api:url": "ts-node src/scripts/getApiUrl.ts"
   },
   "keywords": [
     "aws",
@@ -22,6 +24,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@aws-sdk/client-cloudformation": "^3.0.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.714.0",
     "@aws-sdk/client-dynamodb": "^3.714.0",
     "@aws-sdk/lib-dynamodb": "^3.714.0",

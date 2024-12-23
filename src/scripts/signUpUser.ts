@@ -1,15 +1,21 @@
-require("dotenv").config();
-const {
+import dotenv from "dotenv";
+import {
   CognitoIdentityProviderClient,
   SignUpCommand,
-} = require("@aws-sdk/client-cognito-identity-provider");
+  type SignUpCommandOutput,
+} from "@aws-sdk/client-cognito-identity-provider";
+
+dotenv.config();
 
 // Configurar o cliente com a região correta
 const cognitoClient = new CognitoIdentityProviderClient({
   region: process.env.AWS_REGION || "us-east-1",
 });
 
-const signUpUser = async (email, password) => {
+const signUpUser = async (
+  email: string,
+  password: string
+): Promise<SignUpCommandOutput> => {
   if (!process.env.USER_POOL_CLIENT_ID) {
     throw new Error("USER_POOL_CLIENT_ID não encontrado no arquivo .env");
   }
@@ -41,7 +47,7 @@ const signUpUser = async (email, password) => {
 };
 
 // Função para testar o registro
-const testSignUp = async () => {
+const testSignUp = async (): Promise<void> => {
   try {
     // Você pode passar email e senha como argumentos da linha de comando
     const email = process.argv[2] || "teste@exemplo.com";
@@ -54,6 +60,7 @@ const testSignUp = async () => {
     console.log("Resultado completo:", result);
   } catch (error) {
     console.error("Erro no teste de registro:", error);
+    process.exit(1);
   }
 };
 
@@ -62,4 +69,4 @@ if (require.main === module) {
   testSignUp();
 }
 
-module.exports = { signUpUser };
+export { signUpUser };
