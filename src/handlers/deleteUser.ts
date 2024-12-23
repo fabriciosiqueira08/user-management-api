@@ -4,6 +4,7 @@ import { authenticate } from "../middleware/authMiddleware";
 import { deleteCognitoUser } from "../services/cognitoService";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { AuthenticatedEvent } from "../types";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -52,4 +53,4 @@ const deleteUserHandler = async (
   }
 };
 
-export const handler = authenticate(deleteUserHandler);
+export const handler = authenticate(rateLimiter(20)(deleteUserHandler));

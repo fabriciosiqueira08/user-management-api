@@ -1,157 +1,100 @@
 import {
   CognitoIdentityProviderClient,
-  SignUpCommand,
-  ConfirmSignUpCommand,
-  AdminGetUserCommand,
+  AdminCreateUserCommand,
   AdminUpdateUserAttributesCommand,
   AdminDeleteUserCommand,
   AdminAddUserToGroupCommand,
   CreateGroupCommand,
   ListGroupsCommand,
+  MessageActionType,
+  DeliveryMediumType,
+  AdminSetUserPasswordCommand,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { User } from "../types";
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: "us-east-1",
 });
 
-const USER_POOL_ID = process.env.USER_POOL_ID;
-const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
-
 export const createCognitoUser = async (
   email: string,
   name: string,
-  password: string
+  tempPassword: string
 ): Promise<{ UserSub: string }> => {
-  if (!CLIENT_ID) {
-    throw new Error("USER_POOL_CLIENT_ID não encontrado no arquivo .env");
-  }
-
   const params = {
-    ClientId: CLIENT_ID,
+    UserPoolId: process.env.USER_POOL_ID,
     Username: email,
-    Password: password,
+    TemporaryPassword: tempPassword,
+    MessageAction: "SUPPRESS" as MessageActionType,
+    DesiredDeliveryMediums: [] as DeliveryMediumType[],
+    ForceAliasCreation: false,
     UserAttributes: [
-      { Name: "email", Value: email },
-      { Name: "name", Value: name },
+      {
+        Name: "email",
+        Value: email,
+      },
+      {
+        Name: "name",
+        Value: name,
+      },
+      {
+        Name: "email_verified",
+        Value: "true",
+      },
+      {
+        Name: "custom:registrationComplete",
+        Value: "false",
+      },
     ],
   };
 
-  try {
-    const command = new SignUpCommand(params);
-    const response = await cognitoClient.send(command);
-    if (!response.UserSub) {
-      throw new Error("Erro ao criar usuário: ID não gerado");
-    }
-    return { UserSub: response.UserSub };
-  } catch (error) {
-    console.error("Erro ao criar usuário no Cognito:", error);
-    throw error;
-  }
+  const command = new AdminCreateUserCommand(params);
+  const response = await cognitoClient.send(command);
+  return { UserSub: response.User?.Username || "" };
 };
 
-export const confirmSignUp = async (
-  email: string,
-  code: string
-): Promise<void> => {
+// Função para atualizar a senha do usuário
+export const updateUserPassword = async (
+  username: string,
+  password: string
+) => {
   const params = {
-    ClientId: CLIENT_ID,
-    Username: email,
-    ConfirmationCode: code,
-  };
-
-  try {
-    await cognitoClient.send(new ConfirmSignUpCommand(params));
-  } catch (error) {
-    console.error("Erro ao confirmar usuário no Cognito:", error);
-    throw error;
-  }
-};
-
-export const getCognitoUser = async (username: string): Promise<User> => {
-  const params = {
-    UserPoolId: USER_POOL_ID,
+    UserPoolId: process.env.USER_POOL_ID,
     Username: username,
+    Password: password,
+    Permanent: true,
   };
 
-  try {
-    const response = await cognitoClient.send(new AdminGetUserCommand(params));
-    const attributes = response.UserAttributes || [];
-
-    const user: User = {
-      email: "",
-      name: "",
-    };
-
-    attributes.forEach((attr) => {
-      switch (attr.Name) {
-        case "email":
-          user.email = attr.Value || "";
-          break;
-        case "name":
-          user.name = attr.Value;
-          break;
-        case "sub":
-          user.sub = attr.Value;
-          break;
-        case "custom:isAdmin":
-          user.isAdmin = attr.Value === "true";
-          break;
-      }
-    });
-
-    return user;
-  } catch (error) {
-    console.error("Erro ao buscar usuário no Cognito:", error);
-    throw error;
-  }
+  const command = new AdminSetUserPasswordCommand(params);
+  await cognitoClient.send(command);
 };
 
 export const updateCognitoUser = async (
-  username: string,
-  attributes: Record<string, string>
-): Promise<void> => {
+  userId: string,
+  updates: { [key: string]: string }
+) => {
+  const attributes = Object.entries(updates).map(([Name, Value]) => ({
+    Name,
+    Value,
+  }));
+
   const params = {
-    UserPoolId: USER_POOL_ID,
-    Username: username,
-    UserAttributes: Object.entries(attributes).map(([Name, Value]) => ({
-      Name,
-      Value,
-    })),
+    UserPoolId: process.env.USER_POOL_ID,
+    Username: userId,
+    UserAttributes: attributes,
   };
 
-  try {
-    await cognitoClient.send(new AdminUpdateUserAttributesCommand(params));
-  } catch (error) {
-    console.error("Erro ao atualizar usuário no Cognito:", error);
-    throw error;
-  }
+  const command = new AdminUpdateUserAttributesCommand(params);
+  await cognitoClient.send(command);
 };
 
-export const deleteCognitoUser = async (username: string): Promise<void> => {
+export const deleteCognitoUser = async (userId: string) => {
   const params = {
-    UserPoolId: USER_POOL_ID,
-    Username: username,
+    UserPoolId: process.env.USER_POOL_ID,
+    Username: userId,
   };
 
-  try {
-    await cognitoClient.send(new AdminDeleteUserCommand(params));
-  } catch (error) {
-    console.error("Erro ao deletar usuário no Cognito:", error);
-    throw error;
-  }
-};
-
-const generateTempPassword = (): string => {
-  const length = 12;
-  const charset =
-    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
-  let password = "";
-  for (let i = 0; i < length; i++) {
-    const randomIndex = Math.floor(Math.random() * charset.length);
-    password += charset[randomIndex];
-  }
-  return password;
+  const command = new AdminDeleteUserCommand(params);
+  await cognitoClient.send(command);
 };
 
 export const addUserToGroup = async (
@@ -159,25 +102,22 @@ export const addUserToGroup = async (
   groupName: string
 ): Promise<boolean> => {
   try {
-    // Verificar se o grupo existe
     const listGroupsCommand = new ListGroupsCommand({
-      UserPoolId: USER_POOL_ID,
+      UserPoolId: process.env.USER_POOL_ID,
     });
     const { Groups = [] } = await cognitoClient.send(listGroupsCommand);
 
-    // Se o grupo não existir, criar
     if (!Groups.some((g) => g.GroupName === groupName)) {
       const createGroupCommand = new CreateGroupCommand({
-        UserPoolId: USER_POOL_ID,
+        UserPoolId: process.env.USER_POOL_ID,
         GroupName: groupName,
         Description: `${groupName} group`,
       });
       await cognitoClient.send(createGroupCommand);
     }
 
-    // Adicionar usuário ao grupo
     const addToGroupCommand = new AdminAddUserToGroupCommand({
-      UserPoolId: USER_POOL_ID,
+      UserPoolId: process.env.USER_POOL_ID,
       Username: username,
       GroupName: groupName,
     });

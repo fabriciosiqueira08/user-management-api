@@ -1,8 +1,9 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
-import { authenticate } from "../middleware/authMiddleware";
+import { authenticate, requireAdmin } from "../middleware/authMiddleware";
 import { AuthenticatedEvent } from "../types";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
@@ -41,4 +42,6 @@ const listUsersHandler = async (
   }
 };
 
-export const handler = authenticate(listUsersHandler);
+export const handler = authenticate(
+  requireAdmin(rateLimiter(50)(listUsersHandler))
+);

@@ -2,10 +2,15 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { createCognitoUser } from "../services/cognitoService";
+import {
+  generateTempPassword,
+  generateConfirmationLink,
+  sendConfirmationEmail,
+} from "../utils/emailUtils";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 interface CreateUserRequest {
   email: string;
-  password: string;
   name: string;
 }
 
@@ -24,25 +29,20 @@ const createUserHandler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const { email, password, name } = JSON.parse(
-      event.body || "{}"
-    ) as CreateUserRequest;
+    const { email, name } = JSON.parse(event.body || "{}") as CreateUserRequest;
 
-    if (!email || !password || !name) {
+    if (!email || !name) {
       return {
         statusCode: 400,
         body: JSON.stringify({
-          message: "Email, senha e nome são obrigatórios",
-          received: { email, password: "***", name },
+          message: "Email e nome são obrigatórios",
         }),
       };
     }
 
-    // Criar usuário no Cognito
-    const cognitoResponse = await createCognitoUser(email, name, password);
-    if (!cognitoResponse.UserSub) {
-      throw new Error("Erro ao criar usuário: ID não gerado");
-    }
+    // Criar usuário no Cognito com senha temporária
+    const tempPassword = generateTempPassword();
+    const cognitoResponse = await createCognitoUser(email, name, tempPassword);
 
     // Criar usuário no DynamoDB
     const user: User = {
@@ -54,34 +54,41 @@ const createUserHandler = async (
     };
 
     const params = {
-      TableName: process.env.USERS_TABLE!,
+      TableName: process.env.USERS_TABLE,
       Item: user,
     };
 
     const command = new PutCommand(params);
     await docClient.send(command);
 
+    // Enviar email com link de confirmação
+    try {
+      const confirmationLink = generateConfirmationLink(
+        cognitoResponse.UserSub
+      );
+      await sendConfirmationEmail(email, confirmationLink);
+    } catch (emailError) {
+      console.error("Erro ao enviar email:", emailError);
+      // Continua a execução mesmo se o email falhar
+    }
+
     return {
       statusCode: 201,
-      body: JSON.stringify(user),
+      body: JSON.stringify({
+        message:
+          "Usuário criado com sucesso. Verifique seu email para completar o cadastro.",
+        userId: cognitoResponse.UserSub,
+      }),
     };
   } catch (error: any) {
-    console.error("Erro ao criar usuário:", {
-      message: error.message,
-      stack: error.stack,
-      details: error.toString(),
-    });
-
+    console.error("Erro ao criar usuário:", error);
     return {
       statusCode: error.statusCode || 500,
       body: JSON.stringify({
         message: error.message || "Erro ao criar usuário",
-        type: error.name,
-        details:
-          process.env.NODE_ENV === "development" ? error.stack : undefined,
       }),
     };
   }
 };
 
-export const handler = createUserHandler;
+export const handler = rateLimiter(20)(createUserHandler);

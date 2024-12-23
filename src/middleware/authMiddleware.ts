@@ -31,12 +31,10 @@ const verifyToken = async (token: string): Promise<JwtPayload> => {
 
     const signingKey = key.getPublicKey();
 
-    const verified = jwt.verify(token, signingKey, {
+    return jwt.verify(token, signingKey, {
       algorithms: ["RS256"],
       issuer: `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`,
     }) as JwtPayload;
-
-    return verified;
   } catch (error) {
     console.error("Erro na verificação do token:", error);
     throw error;
@@ -47,23 +45,35 @@ const authMiddleware = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult | null> => {
   try {
-    const authHeader =
-      event.headers.Authorization || event.headers.authorization;
-    if (!authHeader) {
+    const token = event.headers.Authorization?.replace("Bearer ", "");
+    if (!token) {
       return {
         statusCode: 401,
         body: JSON.stringify({ message: "Token não fornecido" }),
       };
     }
 
-    const token = authHeader.replace("Bearer ", "");
     const decodedToken = await verifyToken(token);
 
     (event as AuthenticatedEvent).user = {
       sub: decodedToken.sub || "",
-      email: decodedToken["email"] || "",
-      isAdmin: decodedToken["custom:isAdmin"] === "true",
+      email: decodedToken.email || "",
+      isAdmin: decodedToken["cognito:groups"]?.includes("admin") || false,
     };
+
+    const userId = event.pathParameters?.id;
+    if (
+      userId &&
+      userId !== decodedToken.sub &&
+      !(event as AuthenticatedEvent).user.isAdmin
+    ) {
+      return {
+        statusCode: 403,
+        body: JSON.stringify({
+          message: "Sem permissão para acessar este recurso",
+        }),
+      };
+    }
 
     return null;
   } catch (error) {
@@ -77,21 +87,24 @@ const authMiddleware = async (
 
 export const authenticate = (handler: LambdaHandler): LambdaHandler => {
   return async (
-    event: APIGatewayProxyEvent
+    event: APIGatewayProxyEvent,
+    context: any
   ): Promise<APIGatewayProxyResult> => {
     const authResult = await authMiddleware(event);
     if (authResult) {
       return authResult;
     }
-    return handler(event, {});
+    return handler(event, context);
   };
 };
 
 export const requireAdmin = (handler: LambdaHandler): LambdaHandler => {
-  return async (event: AuthenticatedEvent): Promise<APIGatewayProxyResult> => {
-    const authenticatedEvent = event as AuthenticatedEvent;
-
-    if (!authenticatedEvent.user?.isAdmin) {
+  return async (
+    event: APIGatewayProxyEvent | AuthenticatedEvent,
+    context: any
+  ): Promise<APIGatewayProxyResult> => {
+    const authEvent = event as AuthenticatedEvent;
+    if (!authEvent.user?.isAdmin) {
       return {
         statusCode: 403,
         body: JSON.stringify({
@@ -99,7 +112,6 @@ export const requireAdmin = (handler: LambdaHandler): LambdaHandler => {
         }),
       };
     }
-
-    return await handler(event, {});
+    return handler(event, context);
   };
 };

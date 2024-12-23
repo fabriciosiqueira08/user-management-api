@@ -9,7 +9,7 @@ export interface User {
 }
 
 export interface AuthenticatedEvent extends APIGatewayProxyEvent {
-  user?: {
+  user: {
     sub: string;
     email: string;
     isAdmin: boolean;

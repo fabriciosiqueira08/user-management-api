@@ -5,6 +5,15 @@ import {
   GlobalSignOutCommand,
   AuthFlowType,
 } from "@aws-sdk/client-cognito-identity-provider";
+import {
+  initiateAuth,
+  generateOTP,
+  storeOTP,
+  sendOTPEmail,
+  validateOTP,
+  completeAuth,
+} from "../services/authService";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 const cognitoClient = new CognitoIdentityProviderClient({
   region: "us-east-1",
@@ -36,27 +45,19 @@ const login = async (
       };
     }
 
-    const params = {
-      AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
-      ClientId: CLIENT_ID,
-      AuthParameters: {
-        USERNAME: email,
-        PASSWORD: password,
-      },
-    };
+    // Verificar credenciais
+    const authResponse = await initiateAuth(email, password);
 
-    const command = new InitiateAuthCommand(params);
-    const response = await cognitoClient.send(command);
+    // Gerar e enviar OTP
+    const otp = await generateOTP();
+    await storeOTP(email, otp); // Armazenar OTP temporariamente
+    await sendOTPEmail(email, otp);
 
     return {
       statusCode: 200,
       body: JSON.stringify({
-        message: "Login realizado com sucesso",
-        tokens: {
-          accessToken: response.AuthenticationResult?.AccessToken,
-          refreshToken: response.AuthenticationResult?.RefreshToken,
-          idToken: response.AuthenticationResult?.IdToken,
-        },
+        message: "Código de verificação enviado para seu email",
+        session: authResponse.Session,
       }),
     };
   } catch (error) {
@@ -65,7 +66,6 @@ const login = async (
       statusCode: 500,
       body: JSON.stringify({
         message: "Erro ao realizar login",
-        error: (error as Error).message,
       }),
     };
   }
@@ -161,8 +161,57 @@ const logoutHandler = async (
   }
 };
 
-export const handler = {
-  login,
-  refreshToken,
-  logoutHandler,
+// Novo endpoint para verificar OTP
+const verifyOTP = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  try {
+    const { email, otp, session } = JSON.parse(event.body || "{}");
+
+    if (!email || !otp || !session) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Email, código e sessão são obrigatórios",
+        }),
+      };
+    }
+
+    // Verificar OTP
+    const isValid = await validateOTP(email, otp);
+    if (!isValid) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Código inválido ou expirado",
+        }),
+      };
+    }
+
+    // Completar autenticação e gerar tokens
+    const tokens = await completeAuth(session);
+
+    return {
+      statusCode: 200,
+      body: JSON.stringify({
+        message: "Login realizado com sucesso",
+        tokens,
+      }),
+    };
+  } catch (error) {
+    console.error("Erro na verificação do OTP:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: "Erro na verificação do código",
+      }),
+    };
+  }
 };
+
+// Rate limit mais restrito para tentativas de login
+export const loginHandler = rateLimiter(30)(login);
+export const verifyOTPHandler = rateLimiter(30)(verifyOTP);
+export const refreshTokenHandler = rateLimiter(60)(refreshToken);
+
+export { login, refreshToken, logoutHandler, verifyOTP };

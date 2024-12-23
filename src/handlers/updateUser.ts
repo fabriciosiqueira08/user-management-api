@@ -4,6 +4,7 @@ import { authenticate } from "../middleware/authMiddleware";
 import { updateCognitoUser } from "../services/cognitoService";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { AuthenticatedEvent } from "../types";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 interface UpdateUserBody {
   name: string;
@@ -76,4 +77,4 @@ const updateUserHandler = async (
   }
 };
 
-export const handler = authenticate(updateUserHandler);
+export const handler = authenticate(rateLimiter(50)(updateUserHandler));

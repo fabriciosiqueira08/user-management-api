@@ -1,6 +1,8 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { addUserToGroup } from "../services/cognitoService";
 import { authenticate } from "../middleware/authMiddleware";
+import { requireAdmin } from "../middleware/authMiddleware";
+import { rateLimiter } from "../middleware/rateLimiter";
 
 interface MakeAdminRequest {
   email: string;
@@ -40,4 +42,6 @@ const makeAdminHandler = async (
   }
 };
 
-export const handler = authenticate(makeAdminHandler);
+export const handler = authenticate(
+  requireAdmin(rateLimiter(20)(makeAdminHandler))
+);

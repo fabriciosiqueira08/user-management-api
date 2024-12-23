@@ -1,9 +1,10 @@
 # Dependências
 node_modules/
 jspm_packages/
-
+dist/
 # Arquivos de build
 .serverless/
+.build
 
 # Arquivos de ambiente
 .env
