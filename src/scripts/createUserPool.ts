@@ -2,105 +2,84 @@ import {
   CognitoIdentityProviderClient,
   CreateUserPoolCommand,
   CreateUserPoolClientCommand,
-  type UserPoolType,
-  type UserPoolClientType,
-  type VerifiedAttributeType,
-  type ExplicitAuthFlowsType,
-  type UserPoolMfaType,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { config } from "dotenv";
 
-// Configurar o cliente com a região correta
+config();
+
 const cognitoClient = new CognitoIdentityProviderClient({
   region: "us-east-1",
 });
 
-const createUserPool = async () => {
-  const params = {
-    PoolName: "MyAppUserPool",
-    Policies: {
-      PasswordPolicy: {
-        MinimumLength: 8,
-        RequireUppercase: true,
-        RequireLowercase: true,
-        RequireNumbers: true,
-        RequireSymbols: true,
+async function createUserPool() {
+  try {
+    // Criar User Pool
+    const createPoolCommand = new CreateUserPoolCommand({
+      PoolName: "MyAppUserPool",
+      AutoVerifiedAttributes: ["email"],
+      UsernameAttributes: ["email"],
+      MfaConfiguration: "OFF",
+      AdminCreateUserConfig: {
+        AllowAdminCreateUserOnly: false,
       },
-    },
-    AutoVerifiedAttributes: ["email"] as VerifiedAttributeType[],
-    UsernameAttributes: ["email"] as VerifiedAttributeType[],
-    MfaConfiguration: "OFF" as UserPoolMfaType,
-  };
+      Policies: {
+        PasswordPolicy: {
+          MinimumLength: 8,
+          RequireUppercase: true,
+          RequireLowercase: true,
+          RequireNumbers: true,
+          RequireSymbols: true,
+        },
+      },
+    });
 
-  try {
-    const command = new CreateUserPoolCommand(params);
-    const userPool = await cognitoClient.send(command);
-    if (!userPool.UserPool?.Id) {
-      throw new Error("User Pool ID não foi gerado");
-    }
-    console.log("User Pool criado com sucesso:", userPool.UserPool.Id);
-    return userPool;
-  } catch (error) {
-    console.error("Erro ao criar user pool:", error);
-    throw error;
-  }
-};
+    const userPoolResponse = await cognitoClient.send(createPoolCommand);
+    const userPoolId = userPoolResponse.UserPool?.Id;
 
-const createAppClient = async (userPoolId: string) => {
-  const params = {
-    ClientName: "MyAppClient",
-    UserPoolId: userPoolId,
-    GenerateSecret: false,
-    ExplicitAuthFlows: [
-      "ALLOW_USER_SRP_AUTH",
-      "ALLOW_REFRESH_TOKEN_AUTH",
-    ] as ExplicitAuthFlowsType[],
-  };
-
-  try {
-    const command = new CreateUserPoolClientCommand(params);
-    const appClient = await cognitoClient.send(command);
-    if (!appClient.UserPoolClient?.ClientId) {
-      throw new Error("Client ID não foi gerado");
-    }
-    console.log(
-      "App Client criado com sucesso:",
-      appClient.UserPoolClient.ClientId
-    );
-    return appClient;
-  } catch (error) {
-    console.error("Erro ao criar app client:", error);
-    throw error;
-  }
-};
-
-// Executar as funções em sequência
-const init = async (): Promise<void> => {
-  try {
-    const userPoolResult = await createUserPool();
-    if (!userPoolResult.UserPool?.Id) {
-      throw new Error("User Pool ID não encontrado");
+    if (!userPoolId) {
+      throw new Error("Falha ao criar User Pool");
     }
 
-    const appClientResult = await createAppClient(userPoolResult.UserPool.Id);
+    // Criar App Client
+    const createClientCommand = new CreateUserPoolClientCommand({
+      UserPoolId: userPoolId,
+      ClientName: "MyAppClient",
+      GenerateSecret: false,
+      ExplicitAuthFlows: [
+        "ALLOW_USER_PASSWORD_AUTH",
+        "ALLOW_REFRESH_TOKEN_AUTH",
+        "ALLOW_USER_SRP_AUTH",
+        "ALLOW_CUSTOM_AUTH",
+      ],
+      PreventUserExistenceErrors: "ENABLED",
+      WriteAttributes: ["email", "name", "custom:role"],
+      ReadAttributes: ["email", "name", "custom:role"],
+    });
+
+    const clientResponse = await cognitoClient.send(createClientCommand);
+    const clientId = clientResponse.UserPoolClient?.ClientId;
+
+    if (!clientId) {
+      throw new Error("Falha ao criar App Client");
+    }
+
+    console.log("User Pool criado com sucesso:", userPoolId);
+    console.log("App Client criado com sucesso:", clientId);
 
     console.log("Configuração completa:", {
       userPool: {
-        id: userPoolResult.UserPool.Id,
-        name: userPoolResult.UserPool.Name,
-        arn: userPoolResult.UserPool.Arn,
+        name: "MyAppUserPool",
+        arn: `arn:aws:cognito-idp:us-east-1:${process.env.AWS_ACCOUNT_ID}:userpool/${userPoolId}`,
       },
       appClient: {
-        id: appClientResult.UserPoolClient?.ClientId,
-        name: appClientResult.UserPoolClient?.ClientName,
+        id: clientId,
+        name: "MyAppClient",
       },
     });
   } catch (error) {
-    console.error("Erro na configuração:", error);
-    process.exit(1);
+    console.error("Erro ao criar User Pool:", error);
+    throw error;
   }
-};
-
-// Executar apenas se for o arquivo principal
-if (require.main === module) {
-  init();
 }
+
+createUserPool();

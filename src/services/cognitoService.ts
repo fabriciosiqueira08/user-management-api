@@ -7,25 +7,37 @@ import {
   CreateGroupCommand,
   ListGroupsCommand,
   MessageActionType,
-  DeliveryMediumType,
   AdminSetUserPasswordCommand,
+  AdminInitiateAuthCommand,
+  AuthFlowType,
+  ChallengeNameType,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { sendTempPasswordEmail } from "./emailService";
+
+if (!process.env.USER_POOL_ID) {
+  throw new Error("USER_POOL_ID não está definido");
+}
+
+if (!process.env.USER_POOL_CLIENT_ID) {
+  throw new Error("USER_POOL_CLIENT_ID não está definido");
+}
 
 const cognitoClient = new CognitoIdentityProviderClient({
-  region: "us-east-1",
+  region: process.env.AWS_REGION || "us-east-1",
 });
+
+const USER_POOL_ID = process.env.USER_POOL_ID;
+const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
 
 export const createCognitoUser = async (
   email: string,
-  name: string,
   tempPassword: string
 ): Promise<{ UserSub: string }> => {
   const params = {
-    UserPoolId: process.env.USER_POOL_ID,
+    UserPoolId: USER_POOL_ID,
     Username: email,
     TemporaryPassword: tempPassword,
-    MessageAction: "SUPPRESS" as MessageActionType,
-    DesiredDeliveryMediums: [] as DeliveryMediumType[],
+    MessageAction: MessageActionType.SUPPRESS,
     ForceAliasCreation: false,
     UserAttributes: [
       {
@@ -33,39 +45,103 @@ export const createCognitoUser = async (
         Value: email,
       },
       {
-        Name: "name",
-        Value: name,
-      },
-      {
         Name: "email_verified",
         Value: "true",
-      },
-      {
-        Name: "custom:registrationComplete",
-        Value: "false",
       },
     ],
   };
 
-  const command = new AdminCreateUserCommand(params);
-  const response = await cognitoClient.send(command);
-  return { UserSub: response.User?.Username || "" };
+  try {
+    const command = new AdminCreateUserCommand(params);
+    const response = await cognitoClient.send(command);
+
+    // Enviar email com a senha temporária
+    await sendTempPasswordEmail(email, tempPassword);
+
+    return { UserSub: response.User?.Username || "" };
+  } catch (error) {
+    console.error("Erro ao criar usuário no Cognito:", error);
+    throw error;
+  }
 };
 
-// Função para atualizar a senha do usuário
+export const verifyTempPassword = async (
+  email: string,
+  tempPassword: string
+): Promise<string | null> => {
+  try {
+    const authParams = {
+      AuthFlow: AuthFlowType.ADMIN_USER_PASSWORD_AUTH,
+      UserPoolId: USER_POOL_ID,
+      ClientId: CLIENT_ID,
+      AuthParameters: {
+        USERNAME: email,
+        PASSWORD: tempPassword,
+      },
+    };
+
+    console.log("Tentando autenticar com senha temporária:", {
+      email,
+      userPoolId: process.env.USER_POOL_ID,
+      clientId: process.env.USER_POOL_CLIENT_ID,
+    });
+
+    try {
+      const authCommand = new AdminInitiateAuthCommand(authParams);
+      const authResponse = await cognitoClient.send(authCommand);
+
+      console.log(
+        "Resposta da autenticação:",
+        JSON.stringify(authResponse, null, 2)
+      );
+
+      if (
+        authResponse.ChallengeName === ChallengeNameType.NEW_PASSWORD_REQUIRED
+      ) {
+        return email;
+      }
+    } catch (authError: any) {
+      // Se o erro for NotAuthorizedException, significa que a senha está incorreta
+      if (authError.name === "NotAuthorizedException") {
+        console.log("Senha temporária inválida");
+        return null;
+      }
+      // Se for UserNotFoundException, o usuário não existe
+      if (authError.name === "UserNotFoundException") {
+        console.log("Usuário não encontrado");
+        return null;
+      }
+      throw authError;
+    }
+
+    return null;
+  } catch (error) {
+    console.error("Erro ao verificar senha temporária:", error);
+    if (process.env.IS_OFFLINE) {
+      console.error("Detalhes do erro:", JSON.stringify(error, null, 2));
+    }
+    throw error;
+  }
+};
+
 export const updateUserPassword = async (
   username: string,
-  password: string
-) => {
-  const params = {
-    UserPoolId: process.env.USER_POOL_ID,
-    Username: username,
-    Password: password,
-    Permanent: true,
-  };
+  newPassword: string
+): Promise<void> => {
+  try {
+    const params = {
+      UserPoolId: process.env.USER_POOL_ID,
+      Username: username,
+      Password: newPassword,
+      Permanent: true,
+    };
 
-  const command = new AdminSetUserPasswordCommand(params);
-  await cognitoClient.send(command);
+    const command = new AdminSetUserPasswordCommand(params);
+    await cognitoClient.send(command);
+  } catch (error) {
+    console.error("Erro ao atualizar senha:", error);
+    throw error;
+  }
 };
 
 export const updateCognitoUser = async (
@@ -103,13 +179,13 @@ export const addUserToGroup = async (
 ): Promise<boolean> => {
   try {
     const listGroupsCommand = new ListGroupsCommand({
-      UserPoolId: process.env.USER_POOL_ID,
+      UserPoolId: USER_POOL_ID,
     });
     const { Groups = [] } = await cognitoClient.send(listGroupsCommand);
 
     if (!Groups.some((g) => g.GroupName === groupName)) {
       const createGroupCommand = new CreateGroupCommand({
-        UserPoolId: process.env.USER_POOL_ID,
+        UserPoolId: USER_POOL_ID,
         GroupName: groupName,
         Description: `${groupName} group`,
       });
@@ -117,7 +193,7 @@ export const addUserToGroup = async (
     }
 
     const addToGroupCommand = new AdminAddUserToGroupCommand({
-      UserPoolId: process.env.USER_POOL_ID,
+      UserPoolId: USER_POOL_ID,
       Username: username,
       GroupName: groupName,
     });

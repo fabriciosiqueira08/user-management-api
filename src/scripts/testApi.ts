@@ -1,329 +1,180 @@
-import axios, { AxiosError } from "axios";
-import dotenv from "dotenv";
-import * as readline from "readline";
+import axios from "axios";
 import { getApiUrl } from "./getApiUrl";
-
-dotenv.config();
+import * as readline from "readline";
 
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
 });
 
-const question = (text: string): Promise<string> =>
-  new Promise((resolve) => rl.question(text, resolve));
+const question = (query: string): Promise<string> => {
+  return new Promise((resolve) => {
+    rl.question(query, resolve);
+  });
+};
 
-interface User {
-  email: string;
-  name: string;
-  password: string;
-}
+const API_URL = getApiUrl();
 
-interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  idToken: string;
-}
-
-class ApiTester {
-  private baseUrl: string;
-  private tokens: AuthTokens | null = null;
-
-  constructor(baseUrl: string) {
-    this.baseUrl = baseUrl;
-  }
-
-  async login(email: string, password: string): Promise<void> {
-    try {
-      const response = await axios.post(`${this.baseUrl}/auth/login`, {
-        email,
-        password,
-      });
-
-      this.tokens = response.data.tokens;
-      console.log("\nLogin realizado com sucesso!");
-      if (this.tokens) {
-        console.log("Token:", this.tokens.accessToken);
-      }
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async registerUser(): Promise<void> {
-    try {
-      const email = await question("Email: ");
-      const password = await question("Senha: ");
-      const name = await question("Nome: ");
-
-      const response = await axios.post(`${this.baseUrl}/users`, {
-        email,
-        password,
-        name,
-      });
-
-      console.log("\nUsuário registrado com sucesso!");
-      console.log(response.data);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async confirmUser(): Promise<void> {
-    try {
-      const email = await question("Email: ");
-      const code = await question("Código de confirmação: ");
-
-      const response = await axios.post(`${this.baseUrl}/auth/confirm`, {
-        email,
-        code,
-      });
-
-      console.log("\nEmail confirmado com sucesso!");
-      console.log(response.data);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async listUsers(): Promise<void> {
-    try {
-      const response = await axios.get(
-        `${this.baseUrl}/users`,
-        this.getHeaders()
-      );
-      console.log("\nLista de usuários:");
-      console.log(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async getUser(): Promise<void> {
-    try {
-      const id = await question("ID do usuário: ");
-      const response = await axios.get(
-        `${this.baseUrl}/users/${id}`,
-        this.getHeaders()
-      );
-      console.log("\nDados do usuário:");
-      console.log(JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async updateUser(): Promise<void> {
-    try {
-      const id = await question("ID do usuário: ");
-      const name = await question("Novo nome: ");
-      const email = await question("Novo email: ");
-
-      const response = await axios.put(
-        `${this.baseUrl}/users/${id}`,
-        { name, email },
-        this.getHeaders()
-      );
-
-      console.log("\nUsuário atualizado com sucesso!");
-      console.log(response.data);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async deleteUser(): Promise<void> {
-    try {
-      const id = await question("ID do usuário: ");
-      const response = await axios.delete(
-        `${this.baseUrl}/users/${id}`,
-        this.getHeaders()
-      );
-      console.log("\nUsuário deletado com sucesso!");
-      console.log(response.data);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async refreshToken(): Promise<void> {
-    try {
-      const refreshToken = await question("Refresh Token: ");
-      const response = await axios.post(`${this.baseUrl}/auth/refresh-token`, {
-        refreshToken,
-      });
-
-      this.tokens = response.data.tokens;
-      console.log("\nToken renovado com sucesso!");
-      if (this.tokens) {
-        console.log("Novo token:", this.tokens.accessToken);
-      }
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async logout(): Promise<void> {
-    if (!this.tokens?.accessToken) {
-      console.log("\nVocê não está logado!");
-      return;
-    }
-
-    try {
-      await axios.post(`${this.baseUrl}/auth/logout`, {}, this.getHeaders());
-
-      console.log("\nLogout realizado com sucesso!");
-      this.tokens = null;
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  async setToken(): Promise<void> {
-    const token = await question("Token: ");
-    this.tokens = {
-      accessToken: token,
-      refreshToken: "",
-      idToken: "",
-    };
-    console.log("\nToken definido com sucesso!");
-
-    // Mostrar informações do token atual
-    if (token) {
-      const tokenParts = token.split(".");
-      if (tokenParts.length === 3) {
-        try {
-          const payload = JSON.parse(
-            Buffer.from(tokenParts[1], "base64").toString()
-          );
-          console.log("\nInformações do token:");
-          console.log("- Email:", payload.email);
-          console.log("- Nome:", payload.name);
-          console.log(
-            "- Expira em:",
-            new Date(payload.exp * 1000).toLocaleString()
-          );
-        } catch (error) {
-          console.log("Não foi possível decodificar o token");
-        }
-      }
-    }
-  }
-
-  async makeUserAdmin(): Promise<void> {
-    try {
-      const email = await question("Email do usuário: ");
-      const response = await axios.post(
-        `${this.baseUrl}/users/make-admin`,
-        { email },
-        this.getHeaders()
-      );
-
-      console.log("\nUsuário promovido a administrador com sucesso!");
-      console.log(response.data);
-    } catch (error) {
-      this.handleError(error);
-    }
-  }
-
-  private getHeaders() {
-    return {
-      headers: this.tokens?.accessToken
-        ? { Authorization: `Bearer ${this.tokens.accessToken}` }
-        : {},
-    };
-  }
-
-  private handleError(error: unknown): void {
-    if (error instanceof AxiosError && error.response) {
-      console.error("\nErro:", error.response.data?.message || error.message);
-    } else {
-      console.error("\nErro:", String(error));
-    }
-  }
-
-  async showMenu(): Promise<void> {
-    console.log("\n=== Menu de Teste da API ===");
-    console.log("1. Registrar usuário");
-    console.log("2. Confirmar registro");
-    console.log("3. Login");
-    console.log("4. Listar usuários");
-    console.log("5. Buscar usuário por ID");
-    console.log("6. Atualizar usuário");
-    console.log("7. Deletar usuário");
-    console.log("8. Renovar token");
-    console.log("9. Logout");
-    console.log("10. Inserir token manualmente");
-    console.log("11. Tornar usuário admin");
-    console.log("12. Sair");
-
-    const option = await question("\nEscolha uma opção: ");
-    console.log("");
-
-    switch (option) {
-      case "1":
-        await this.registerUser();
-        break;
-      case "2":
-        await this.confirmUser();
-        break;
-      case "3":
-        const email = await question("Email: ");
-        const password = await question("Senha: ");
-        await this.login(email, password);
-        break;
-      case "4":
-        await this.listUsers();
-        break;
-      case "5":
-        await this.getUser();
-        break;
-      case "6":
-        await this.updateUser();
-        break;
-      case "7":
-        await this.deleteUser();
-        break;
-      case "8":
-        await this.refreshToken();
-        break;
-      case "9":
-        await this.logout();
-        break;
-      case "10":
-        await this.setToken();
-        break;
-      case "11":
-        await this.makeUserAdmin();
-        break;
-      case "12":
-        console.log("Até logo!");
-        rl.close();
-        return;
-      default:
-        console.log("Opção inválida!");
-    }
-
-    await this.showMenu();
-  }
-}
-
-const init = async (): Promise<void> => {
+const testUserCreation = async () => {
   try {
-    console.log("=== Teste da API de Usuários ===\n");
-    const apiUrl = await getApiUrl();
-    console.log("URL da API:", apiUrl);
+    console.log("\n=== Testando criação de usuário ===");
+    const email = await question("Digite o email do usuário: ");
+    const name = await question("Digite o nome do usuário: ");
 
-    const tester = new ApiTester(apiUrl);
-    await tester.showMenu();
-  } catch (error) {
-    console.error("Erro ao inicializar:", error);
-    process.exit(1);
+    const response = await axios.post(`${API_URL}/users`, {
+      email,
+      name,
+    });
+
+    console.log("\nResposta da criação de usuário:", response.data);
+    return { email, name };
+  } catch (error: any) {
+    console.error(
+      "\nErro ao criar usuário:",
+      error.response?.data || error.message
+    );
+    throw error;
   }
 };
 
-if (require.main === module) {
-  init();
-}
+const testCompleteRegistration = async (email: string) => {
+  try {
+    console.log("\n=== Testando confirmação de registro ===");
+    const code = await question(
+      "Digite o código de verificação recebido no email: "
+    );
+    const password = await question("Digite a senha desejada: ");
 
-export { ApiTester };
+    const response = await axios.post(`${API_URL}/auth/complete-registration`, {
+      email,
+      verificationCode: code,
+      name: email.split("@")[0], // Usa parte do email como nome
+      password,
+      confirmPassword: password,
+    });
+
+    console.log("\nResposta da confirmação de registro:", response.data);
+  } catch (error: any) {
+    console.error(
+      "\nErro ao confirmar registro:",
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+};
+
+const testLogin = async (email: string) => {
+  try {
+    console.log("\n=== Testando login ===");
+    const password = await question("Digite sua senha: ");
+
+    const response = await axios.post(`${API_URL}/auth/login`, {
+      email,
+      password,
+    });
+
+    console.log("\nResposta do login:", response.data);
+
+    // MFA é sempre obrigatório
+    return await testVerifyMFA(response.data.session);
+  } catch (error: any) {
+    console.error(
+      "\nErro ao fazer login:",
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+};
+
+const testVerifyMFA = async (session: string) => {
+  try {
+    console.log("\n=== Verificando MFA ===");
+    const code = await question("Digite o código MFA recebido: ");
+
+    const response = await axios.post(`${API_URL}/auth/verify-mfa`, {
+      session,
+      code,
+    });
+
+    console.log("\nResposta da verificação MFA:", response.data);
+    return response.data.tokens;
+  } catch (error: any) {
+    console.error(
+      "\nErro ao verificar MFA:",
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+};
+
+const testRefreshToken = async (refreshToken: string) => {
+  try {
+    console.log("\n=== Testando refresh token ===");
+    const response = await axios.post(`${API_URL}/auth/refresh-token`, {
+      refreshToken,
+    });
+
+    console.log("\nResposta do refresh token:", response.data);
+    return response.data.tokens;
+  } catch (error: any) {
+    console.error(
+      "\nErro ao atualizar token:",
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+};
+
+const testLogout = async (accessToken: string) => {
+  try {
+    console.log("\n=== Testando logout ===");
+    const response = await axios.post(
+      `${API_URL}/auth/logout`,
+      {},
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    console.log("\nResposta do logout:", response.data);
+  } catch (error: any) {
+    console.error(
+      "\nErro ao fazer logout:",
+      error.response?.data || error.message
+    );
+    throw error;
+  }
+};
+
+const runTests = async () => {
+  try {
+    // Criar usuário
+    const { email } = await testUserCreation();
+
+    // Confirmar registro
+    await testCompleteRegistration(email);
+
+    // Login com MFA
+    const tokens = await testLogin(email);
+
+    if (tokens?.refreshToken) {
+      // Testar refresh token
+      await testRefreshToken(tokens.refreshToken);
+    }
+
+    if (tokens?.accessToken) {
+      // Testar logout
+      await testLogout(tokens.accessToken);
+    }
+
+    console.log("\n=== Testes concluídos com sucesso! ===");
+  } catch (error) {
+    console.error("\n=== Erro nos testes ===");
+  } finally {
+    rl.close();
+  }
+};
+
+runTests();

@@ -2,11 +2,6 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import { createCognitoUser } from "../services/cognitoService";
-import {
-  generateTempPassword,
-  generateConfirmationLink,
-  sendConfirmationEmail,
-} from "../utils/emailUtils";
 import { rateLimiter } from "../middleware/rateLimiter";
 
 interface CreateUserRequest {
@@ -25,6 +20,33 @@ interface User {
 const client = new DynamoDBClient({});
 const docClient = DynamoDBDocumentClient.from(client);
 
+// Gerar senha temporária que atende aos requisitos do Cognito
+const generateTempPassword = () => {
+  const uppercase = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lowercase = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const special = "@$!%*?&";
+
+  let password = "";
+  // Garantir pelo menos um de cada tipo
+  password += uppercase[Math.floor(Math.random() * uppercase.length)];
+  password += lowercase[Math.floor(Math.random() * lowercase.length)];
+  password += numbers[Math.floor(Math.random() * numbers.length)];
+  password += special[Math.floor(Math.random() * special.length)];
+
+  // Completar até 12 caracteres
+  const allChars = uppercase + lowercase + numbers + special;
+  while (password.length < 12) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Embaralhar a senha
+  return password
+    .split("")
+    .sort(() => Math.random() - 0.5)
+    .join("");
+};
+
 const createUserHandler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
@@ -40,9 +62,19 @@ const createUserHandler = async (
       };
     }
 
-    // Criar usuário no Cognito com senha temporária
+    // Gerar senha temporária
     const tempPassword = generateTempPassword();
-    const cognitoResponse = await createCognitoUser(email, name, tempPassword);
+
+    // Log da senha temporária apenas em ambiente de desenvolvimento
+    if (process.env.IS_OFFLINE) {
+      console.log("\n=== DADOS PARA TESTE LOCAL ===");
+      console.log("Email:", email);
+      console.log("Senha Temporária:", tempPassword);
+      console.log("============================\n");
+    }
+
+    // Criar usuário no Cognito
+    const cognitoResponse = await createCognitoUser(email, tempPassword);
 
     // Criar usuário no DynamoDB
     const user: User = {
@@ -61,23 +93,12 @@ const createUserHandler = async (
     const command = new PutCommand(params);
     await docClient.send(command);
 
-    // Enviar email com link de confirmação
-    try {
-      const confirmationLink = generateConfirmationLink(
-        cognitoResponse.UserSub
-      );
-      await sendConfirmationEmail(email, confirmationLink);
-    } catch (emailError) {
-      console.error("Erro ao enviar email:", emailError);
-      // Continua a execução mesmo se o email falhar
-    }
-
     return {
       statusCode: 201,
       body: JSON.stringify({
-        message:
-          "Usuário criado com sucesso. Verifique seu email para completar o cadastro.",
+        message: "Usuário criado com sucesso",
         userId: cognitoResponse.UserSub,
+        ...(process.env.IS_OFFLINE && { tempPassword }),
       }),
     };
   } catch (error: any) {

@@ -2,9 +2,12 @@ service: user-management-api
 
 frameworkVersion: "3"
 
+useDotenv: true
+
 plugins:
   - serverless-esbuild
   - serverless-dotenv-plugin
+  - serverless-offline
 
 provider:
   name: aws
@@ -12,25 +15,29 @@ provider:
   region: us-east-1
   stage: dev
   environment:
-    USERS_TABLE: ${env:USERS_TABLE}
     USER_POOL_ID: ${env:USER_POOL_ID}
     USER_POOL_CLIENT_ID: ${env:USER_POOL_CLIENT_ID}
+    USERS_TABLE: ${env:USERS_TABLE}
+    MFA_CODES_TABLE: ${self:service}-${sls:stage}-mfa-codes-v3
     SERVICE_NAME: ${self:service}
     STAGE: ${sls:stage}
+    SES_FROM_EMAIL: ${env:SES_FROM_EMAIL}
     FRONTEND_URL: ${env:FRONTEND_URL}
-    SENDER_EMAIL: ${env:SENDER_EMAIL}
   iam:
     role:
       statements:
         # Permissões DynamoDB
         - Effect: Allow
           Action:
-            - dynamodb:PutItem
+            - dynamodb:Query
+            - dynamodb:Scan
             - dynamodb:GetItem
+            - dynamodb:PutItem
             - dynamodb:UpdateItem
             - dynamodb:DeleteItem
-            - dynamodb:Scan
-          Resource: arn:aws:dynamodb:${self:provider.region}:*:table/${env:USERS_TABLE}
+          Resource:
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${env:USERS_TABLE}
+            - arn:aws:dynamodb:${self:provider.region}:*:table/${self:service}-${sls:stage}-mfa-codes-v3
 
         # Permissões Cognito
         - Effect: Allow
@@ -43,6 +50,9 @@ provider:
             - cognito-idp:AdminSetUserPassword
             - cognito-idp:AdminInitiateAuth
             - cognito-idp:AdminRespondToAuthChallenge
+            - cognito-idp:SignUp
+            - cognito-idp:InitiateAuth
+            - cognito-idp:RespondToAuthChallenge
             - cognito-idp:GlobalSignOut
             - cognito-idp:AdminAddUserToGroup
             - cognito-idp:CreateGroup
@@ -56,12 +66,14 @@ provider:
             - ses:SendRawEmail
           Resource: "*"
 
+        # Permissões Secrets Manager
         - Effect: Allow
           Action:
             - secretsmanager:GetSecretValue
           Resource:
             - arn:aws:secretsmanager:${self:provider.region}:*:secret:${self:service}/${sls:stage}/*
 
+        # Permissões Rate Limit
         - Effect: Allow
           Action:
             - dynamodb:GetItem
@@ -101,28 +113,46 @@ custom:
       - USER_POOL_CLIENT_ID
       - USERS_TABLE
       - FRONTEND_URL
-      - SENDER_EMAIL
-    loadEnv: true
-    required:
-      env:
-        - USER_POOL_ID
-        - USER_POOL_CLIENT_ID
-        - USERS_TABLE
-        - FRONTEND_URL
-        - SENDER_EMAIL
+      - SES_FROM_EMAIL
+      - API_URL
+      - MFA_CODES_TABLE
     logging: true
 
 functions:
-  auth:
-    handler: src/handlers/auth.login
+  createUser:
+    handler: src/handlers/createUser.handler
+    events:
+      - http:
+          path: /users
+          method: post
+          cors: true
+
+  completeRegistration:
+    handler: src/handlers/completeRegistration.handler
+    events:
+      - http:
+          path: /users/complete-registration
+          method: post
+          cors: true
+
+  login:
+    handler: src/handlers/auth.loginHandler
     events:
       - http:
           path: /auth/login
           method: post
           cors: true
 
+  verifyMFA:
+    handler: src/handlers/auth.verifyMFAHandler
+    events:
+      - http:
+          path: /auth/verify-mfa
+          method: post
+          cors: true
+
   refreshToken:
-    handler: src/handlers/auth.refreshToken
+    handler: src/handlers/auth.refreshTokenHandler
     events:
       - http:
           path: /auth/refresh-token
@@ -134,15 +164,6 @@ functions:
     events:
       - http:
           path: /auth/logout
-          method: post
-          cors: true
-          authorizer: aws_iam
-
-  createUser:
-    handler: src/handlers/createUser.handler
-    events:
-      - http:
-          path: /users
           method: post
           cors: true
 
@@ -191,22 +212,6 @@ functions:
           cors: true
           authorizer: aws_iam
 
-  completeRegistration:
-    handler: src/handlers/completeRegistration.handler
-    events:
-      - http:
-          path: /auth/complete-registration
-          method: post
-          cors: true
-
-  verifyOTP:
-    handler: src/handlers/auth.verifyOTP
-    events:
-      - http:
-          path: /auth/verify-otp
-          method: post
-          cors: true
-
 resources:
   Resources:
     UsersTable:
@@ -221,21 +226,6 @@ resources:
             KeyType: HASH
         BillingMode: PAY_PER_REQUEST
 
-    OTPTable:
-      Type: AWS::DynamoDB::Table
-      Properties:
-        TableName: ${self:service}-${sls:stage}-otp
-        AttributeDefinitions:
-          - AttributeName: email
-            AttributeType: S
-        KeySchema:
-          - AttributeName: email
-            KeyType: HASH
-        TimeToLiveSpecification:
-          AttributeName: expiresAt
-          Enabled: true
-        BillingMode: PAY_PER_REQUEST
-
     RateLimitTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -245,6 +235,21 @@ resources:
             AttributeType: S
         KeySchema:
           - AttributeName: id
+            KeyType: HASH
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+        BillingMode: PAY_PER_REQUEST
+
+    MFACodesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:service}-${sls:stage}-mfa-codes-v3
+        AttributeDefinitions:
+          - AttributeName: sessionToken
+            AttributeType: S
+        KeySchema:
+          - AttributeName: sessionToken
             KeyType: HASH
         TimeToLiveSpecification:
           AttributeName: ttl

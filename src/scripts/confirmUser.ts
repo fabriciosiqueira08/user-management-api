@@ -1,69 +1,77 @@
 import dotenv from "dotenv";
-import {
-  CognitoIdentityProviderClient,
-  ConfirmSignUpCommand,
-  type ConfirmSignUpCommandOutput,
-} from "@aws-sdk/client-cognito-identity-provider";
+import axios from "axios";
+import { getApiUrl } from "./getApiUrl";
 
 dotenv.config();
 
-// Configurar o cliente com a região correta
-const cognitoClient = new CognitoIdentityProviderClient({
-  region: process.env.AWS_REGION || "us-east-1",
-});
-
-const confirmUser = async (
+const completeRegistration = async (
   email: string,
-  code: string
-): Promise<ConfirmSignUpCommandOutput> => {
-  if (!process.env.USER_POOL_CLIENT_ID) {
-    throw new Error("USER_POOL_CLIENT_ID não encontrado no arquivo .env");
-  }
-
-  const params = {
-    ClientId: process.env.USER_POOL_CLIENT_ID,
-    Username: email,
-    ConfirmationCode: code,
-  };
+  verificationCode: string,
+  name: string,
+  password: string,
+  confirmPassword: string
+): Promise<any> => {
+  const apiUrl = await getApiUrl();
 
   try {
-    const command = new ConfirmSignUpCommand(params);
-    const response = await cognitoClient.send(command);
-    console.log("Usuário confirmado com sucesso");
-    return response;
-  } catch (error) {
-    console.error("Erro ao confirmar usuário:", error);
+    const response = await axios.post(`${apiUrl}/auth/complete-registration`, {
+      email,
+      verificationCode,
+      name,
+      password,
+      confirmPassword,
+    });
+
+    console.log("Registro completado com sucesso:", response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Erro ao completar registro:",
+      error.response?.data || error.message
+    );
     throw error;
   }
 };
 
 // Função para testar a confirmação
-const testConfirm = async (): Promise<void> => {
+const testCompleteRegistration = async (): Promise<void> => {
   try {
-    // Você pode passar email e código como argumentos da linha de comando
     const email = process.argv[2];
     const code = process.argv[3];
+    const name = process.argv[4];
+    const password = process.argv[5];
 
-    if (!email || !code) {
-      console.error("Por favor, forneça o email e o código de confirmação");
-      console.log("Uso: npm run cognito:confirm-user <email> <código>");
+    if (!email || !code || !name || !password) {
+      console.error("Por favor, forneça todos os parâmetros necessários");
+      console.log(
+        "Uso: npm run complete-registration <email> <código> <nome> <senha>"
+      );
       process.exit(1);
     }
 
-    console.log("Tentando confirmar usuário:", email);
-    console.log("Usando Client ID:", process.env.USER_POOL_CLIENT_ID);
+    console.log("Completando registro para:");
+    console.log("Email:", email);
+    console.log("Nome:", name);
 
-    const result = await confirmUser(email, code);
+    const result = await completeRegistration(
+      email,
+      code,
+      name,
+      password,
+      password
+    );
     console.log("Resultado completo:", result);
+    console.log("\nRegistro completado com sucesso!");
+    console.log("Agora você pode fazer login usando seu email e senha");
   } catch (error) {
-    console.error("Erro no teste de confirmação:", error);
+    console.error("Erro ao completar registro:", error);
     process.exit(1);
   }
 };
 
 // Executar o teste se o script for executado diretamente
 if (require.main === module) {
-  testConfirm();
+  testCompleteRegistration();
 }
 
-export { confirmUser };
+export { completeRegistration };

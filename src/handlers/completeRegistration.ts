@@ -2,11 +2,13 @@ import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
 import {
   updateCognitoUser,
   updateUserPassword,
+  verifyTempPassword,
 } from "../services/cognitoService";
 import { rateLimiter } from "../middleware/rateLimiter";
 
 interface CompleteRegistrationRequest {
-  userId: string;
+  email: string;
+  verificationCode: string;
   name: string;
   password: string;
   confirmPassword: string;
@@ -16,11 +18,11 @@ const completeRegistrationHandler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const { userId, name, password, confirmPassword } = JSON.parse(
-      event.body || "{}"
-    ) as CompleteRegistrationRequest;
+    const { email, verificationCode, name, password, confirmPassword } =
+      JSON.parse(event.body || "{}") as CompleteRegistrationRequest;
 
-    if (!userId || !name || !password || !confirmPassword) {
+    // Validar campos obrigatórios
+    if (!email || !verificationCode || !name || !password || !confirmPassword) {
       return {
         statusCode: 400,
         body: JSON.stringify({
@@ -29,6 +31,7 @@ const completeRegistrationHandler = async (
       };
     }
 
+    // Validar se as senhas coincidem
     if (password !== confirmPassword) {
       return {
         statusCode: 400,
@@ -51,13 +54,28 @@ const completeRegistrationHandler = async (
       };
     }
 
+    // Verificar senha temporária
+    console.log("Verificando senha temporária para:", email);
+    const userId = await verifyTempPassword(email, verificationCode);
+
+    if (!userId) {
+      console.log("Senha temporária inválida para:", email);
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Senha temporária inválida",
+        }),
+      };
+    }
+
+    console.log("Senha temporária válida. Atualizando senha para:", email);
+
     // Definir senha permanente
     await updateUserPassword(userId, password);
 
-    // Atualizar nome e marcar registro como completo
+    // Atualizar nome
     await updateCognitoUser(userId, {
       name,
-      "custom:registrationComplete": "true",
     });
 
     return {
@@ -72,6 +90,7 @@ const completeRegistrationHandler = async (
       statusCode: error.statusCode || 500,
       body: JSON.stringify({
         message: error.message || "Erro ao completar registro",
+        error: process.env.IS_OFFLINE ? error.toString() : undefined,
       }),
     };
   }

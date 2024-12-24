@@ -5,14 +5,7 @@ import {
   GlobalSignOutCommand,
   AuthFlowType,
 } from "@aws-sdk/client-cognito-identity-provider";
-import {
-  initiateAuth,
-  generateOTP,
-  storeOTP,
-  sendOTPEmail,
-  validateOTP,
-  completeAuth,
-} from "../services/authService";
+import { initiateAuth, verifyMFA } from "../services/authService";
 import { rateLimiter } from "../middleware/rateLimiter";
 
 const cognitoClient = new CognitoIdentityProviderClient({
@@ -24,6 +17,11 @@ const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
 interface LoginRequest {
   email: string;
   password: string;
+}
+
+interface VerifyMFARequest {
+  session: string;
+  code: string;
 }
 
 interface RefreshTokenRequest {
@@ -45,27 +43,93 @@ const login = async (
       };
     }
 
-    // Verificar credenciais
-    const authResponse = await initiateAuth(email, password);
+    try {
+      // Verificar credenciais e iniciar MFA
+      const authResponse = await initiateAuth(email, password);
 
-    // Gerar e enviar OTP
-    const otp = await generateOTP();
-    await storeOTP(email, otp); // Armazenar OTP temporariamente
-    await sendOTPEmail(email, otp);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: "Código de verificação enviado para seu email",
-        session: authResponse.Session,
-      }),
-    };
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: "Digite o código MFA",
+          session: authResponse.session,
+          requiresMFA: true,
+        }),
+      };
+    } catch (error: any) {
+      if (error.message === "Credenciais inválidas") {
+        return {
+          statusCode: 401,
+          body: JSON.stringify({
+            message: "Email ou senha incorretos",
+          }),
+        };
+      }
+      if (error.message === "Usuário não encontrado") {
+        return {
+          statusCode: 404,
+          body: JSON.stringify({
+            message: "Usuário não encontrado",
+          }),
+        };
+      }
+      throw error;
+    }
   } catch (error) {
     console.error("Erro no login:", error);
     return {
       statusCode: 500,
       body: JSON.stringify({
         message: "Erro ao realizar login",
+        error: process.env.IS_OFFLINE ? error : undefined,
+      }),
+    };
+  }
+};
+
+const verifyMFAHandler = async (
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> => {
+  try {
+    const { session, code } = JSON.parse(
+      event.body || "{}"
+    ) as VerifyMFARequest;
+
+    if (!session || !code) {
+      return {
+        statusCode: 400,
+        body: JSON.stringify({
+          message: "Sessão e código MFA são obrigatórios",
+        }),
+      };
+    }
+
+    try {
+      const response = await verifyMFA(session, code);
+
+      return {
+        statusCode: 200,
+        body: JSON.stringify({
+          message: "Login completado com sucesso",
+          tokens: response.tokens,
+        }),
+      };
+    } catch (error: any) {
+      if (error.message === "Código MFA inválido ou expirado") {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({
+            message: error.message,
+          }),
+        };
+      }
+      throw error;
+    }
+  } catch (error) {
+    console.error("Erro na verificação MFA:", error);
+    return {
+      statusCode: 500,
+      body: JSON.stringify({
+        message: "Erro ao verificar código MFA",
       }),
     };
   }
@@ -161,57 +225,14 @@ const logoutHandler = async (
   }
 };
 
-// Novo endpoint para verificar OTP
-const verifyOTP = async (
-  event: APIGatewayProxyEvent
-): Promise<APIGatewayProxyResult> => {
-  try {
-    const { email, otp, session } = JSON.parse(event.body || "{}");
-
-    if (!email || !otp || !session) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "Email, código e sessão são obrigatórios",
-        }),
-      };
-    }
-
-    // Verificar OTP
-    const isValid = await validateOTP(email, otp);
-    if (!isValid) {
-      return {
-        statusCode: 400,
-        body: JSON.stringify({
-          message: "Código inválido ou expirado",
-        }),
-      };
-    }
-
-    // Completar autenticação e gerar tokens
-    const tokens = await completeAuth(session);
-
-    return {
-      statusCode: 200,
-      body: JSON.stringify({
-        message: "Login realizado com sucesso",
-        tokens,
-      }),
-    };
-  } catch (error) {
-    console.error("Erro na verificação do OTP:", error);
-    return {
-      statusCode: 500,
-      body: JSON.stringify({
-        message: "Erro na verificação do código",
-      }),
-    };
-  }
-};
-
 // Rate limit mais restrito para tentativas de login
 export const loginHandler = rateLimiter(30)(login);
-export const verifyOTPHandler = rateLimiter(30)(verifyOTP);
+const verifyMFAWithRateLimit = rateLimiter(30)(verifyMFAHandler);
 export const refreshTokenHandler = rateLimiter(60)(refreshToken);
 
-export { login, refreshToken, logoutHandler, verifyOTP };
+export {
+  login,
+  verifyMFAWithRateLimit as verifyMFAHandler,
+  refreshToken,
+  logoutHandler,
+};

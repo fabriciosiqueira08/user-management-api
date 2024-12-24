@@ -1,108 +1,166 @@
 import {
   CognitoIdentityProviderClient,
   InitiateAuthCommand,
-  AuthFlowType,
   RespondToAuthChallengeCommand,
+  AuthFlowType,
   ChallengeNameType,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
-import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import {
-  DynamoDBDocumentClient,
-  PutCommand,
-  GetCommand,
-} from "@aws-sdk/lib-dynamodb";
-import { authenticator } from "otplib";
-import { getSecret } from "../utils/secretsManager";
+import { sendMFACodeEmail } from "./emailService";
+import { generateMFACode } from "../utils/mfaUtils";
+import { storeMFACode, verifyMFACode } from "./mfaService";
+
+if (!process.env.USER_POOL_CLIENT_ID) {
+  throw new Error("USER_POOL_CLIENT_ID não está definido");
+}
+
+if (!process.env.USER_POOL_ID) {
+  throw new Error("USER_POOL_ID não está definido");
+}
 
 const cognitoClient = new CognitoIdentityProviderClient({
-  region: "us-east-1",
+  region: process.env.AWS_REGION || "us-east-1",
 });
 
-const dynamoClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
+const USER_POOL_ID = process.env.USER_POOL_ID;
 
-export const initiateAuth = async (email: string, password: string) => {
-  const params = {
-    AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
-    ClientId: process.env.USER_POOL_CLIENT_ID,
-    AuthParameters: {
-      USERNAME: email,
-      PASSWORD: password,
-    },
+interface AuthResponse {
+  session?: string;
+  tokens?: {
+    accessToken?: string;
+    refreshToken?: string;
+    idToken?: string;
   };
+}
 
-  const command = new InitiateAuthCommand(params);
-  return await cognitoClient.send(command);
-};
-
-export const generateOTP = async (): Promise<string> => {
-  const secret = await getSecret("OTP_SECRET");
-  return authenticator.generate(secret);
-};
-
-export const storeOTP = async (email: string, otp: string) => {
-  const params = {
-    TableName: process.env.OTP_TABLE,
-    Item: {
-      email,
-      otp,
-      expiresAt: Math.floor(Date.now() / 1000) + 300, // 5 minutos
-    },
-  };
-
-  await dynamoClient.send(new PutCommand(params));
-};
-export const sendOTPEmail = async (email: string, otp: string) => {
-  const params = {
-    Source: process.env.SENDER_EMAIL,
-    Destination: { ToAddresses: [email] },
-    Message: {
-      Subject: { Data: "Seu código de verificação" },
-      Body: {
-        Html: {
-          Data: `
-            <h1>Código de verificação</h1>
-            <p>Seu código é: <strong>${otp}</strong></p>
-          `,
-        },
+export const initiateAuth = async (
+  email: string,
+  password: string
+): Promise<AuthResponse> => {
+  try {
+    const params = {
+      AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
+      ClientId: CLIENT_ID,
+      AuthParameters: {
+        USERNAME: email,
+        PASSWORD: password,
       },
-    },
-  };
+    };
 
-  const sesClient = new SESClient({ region: "us-east-1" });
-  await sesClient.send(new SendEmailCommand(params));
+    console.log("Iniciando autenticação para:", email);
+
+    try {
+      const command = new InitiateAuthCommand(params);
+      const response = await cognitoClient.send(command);
+
+      console.log(
+        "Resposta da autenticação:",
+        JSON.stringify(response, null, 2)
+      );
+
+      // Gerar e enviar código MFA apenas se a autenticação for bem-sucedida
+      const mfaCode = generateMFACode();
+      await sendMFACodeEmail(email, mfaCode);
+
+      // Armazenar o código MFA e retornar a sessão do Cognito
+      await storeMFACode(email, mfaCode);
+
+      return {
+        session: response.Session,
+        tokens: response.AuthenticationResult
+          ? {
+              accessToken: response.AuthenticationResult.AccessToken,
+              refreshToken: response.AuthenticationResult.RefreshToken,
+              idToken: response.AuthenticationResult.IdToken,
+            }
+          : undefined,
+      };
+    } catch (authError: any) {
+      console.error("Erro na autenticação:", {
+        name: authError.name,
+        message: authError.message,
+      });
+
+      if (authError.name === "NotAuthorizedException") {
+        throw new Error("Credenciais inválidas");
+      }
+      if (authError.name === "UserNotFoundException") {
+        throw new Error("Usuário não encontrado");
+      }
+      throw authError;
+    }
+  } catch (error: any) {
+    console.error("Erro detalhado na autenticação:", {
+      name: error.name,
+      message: error.message,
+      code: error.$metadata?.httpStatusCode,
+      requestId: error.$metadata?.requestId,
+      stack: error.stack,
+    });
+    throw error;
+  }
 };
-export const validateOTP = async (email: string, otp: string) => {
-  const params = {
-    TableName: process.env.OTP_TABLE,
-    Key: { email },
-  };
 
-  const result = await dynamoClient.send(new GetCommand(params));
-  if (!result.Item) return false;
+export const verifyMFA = async (
+  sessionToken: string,
+  code: string
+): Promise<AuthResponse> => {
+  try {
+    // Verificar o código MFA e obter o email associado
+    const email = await verifyMFACode(sessionToken, code);
+    if (!email) {
+      throw new Error("Código MFA inválido ou expirado");
+    }
 
-  const isValid =
-    result.Item.otp === otp &&
-    result.Item.expiresAt > Math.floor(Date.now() / 1000);
+    const params = {
+      ChallengeName: ChallengeNameType.SOFTWARE_TOKEN_MFA,
+      ClientId: CLIENT_ID,
+      ChallengeResponses: {
+        USERNAME: email,
+        SOFTWARE_TOKEN_MFA_CODE: code,
+      },
+      Session: sessionToken,
+    };
 
-  return isValid;
-};
-export const completeAuth = async (session: string) => {
-  const params = {
-    ClientId: process.env.USER_POOL_CLIENT_ID,
-    ChallengeName: ChallengeNameType.CUSTOM_CHALLENGE,
-    Session: session,
-    ChallengeResponses: {
-      ANSWER: "valid",
-    },
-  };
+    console.log(
+      "Verificando código MFA com parâmetros:",
+      JSON.stringify(params, null, 2)
+    );
 
-  const command = new RespondToAuthChallengeCommand(params);
-  const response = await cognitoClient.send(command);
+    const command = new RespondToAuthChallengeCommand(params);
+    const response = await cognitoClient.send(command);
 
-  return {
-    accessToken: response.AuthenticationResult?.AccessToken,
-    refreshToken: response.AuthenticationResult?.RefreshToken,
-    idToken: response.AuthenticationResult?.IdToken,
-  };
+    console.log(
+      "Resposta da verificação MFA:",
+      JSON.stringify(response, null, 2)
+    );
+
+    if (!response.AuthenticationResult) {
+      throw new Error("Falha na autenticação após MFA");
+    }
+
+    return {
+      tokens: {
+        accessToken: response.AuthenticationResult.AccessToken,
+        refreshToken: response.AuthenticationResult.RefreshToken,
+        idToken: response.AuthenticationResult.IdToken,
+      },
+    };
+  } catch (error: any) {
+    console.error("Erro detalhado na verificação MFA:", {
+      name: error.name,
+      message: error.message,
+      code: error.$metadata?.httpStatusCode,
+      requestId: error.$metadata?.requestId,
+      stack: error.stack,
+    });
+
+    if (error.name === "NotAuthorizedException") {
+      throw new Error("Código MFA inválido");
+    }
+    if (error.name === "CodeMismatchException") {
+      throw new Error("Código MFA incorreto");
+    }
+    throw error;
+  }
 };

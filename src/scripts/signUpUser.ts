@@ -1,47 +1,25 @@
 import dotenv from "dotenv";
-import {
-  CognitoIdentityProviderClient,
-  SignUpCommand,
-  type SignUpCommandOutput,
-} from "@aws-sdk/client-cognito-identity-provider";
+import axios from "axios";
+import { getApiUrl } from "./getApiUrl";
 
 dotenv.config();
 
-// Configurar o cliente com a região correta
-const cognitoClient = new CognitoIdentityProviderClient({
-  region: process.env.AWS_REGION || "us-east-1",
-});
-
-const signUpUser = async (
-  email: string,
-  password: string
-): Promise<SignUpCommandOutput> => {
-  if (!process.env.USER_POOL_CLIENT_ID) {
-    throw new Error("USER_POOL_CLIENT_ID não encontrado no arquivo .env");
-  }
-
-  const params = {
-    ClientId: process.env.USER_POOL_CLIENT_ID,
-    Username: email,
-    Password: password,
-    UserAttributes: [
-      {
-        Name: "email",
-        Value: email,
-      },
-    ],
-  };
+const signUpUser = async (email: string, name: string): Promise<any> => {
+  const apiUrl = await getApiUrl();
 
   try {
-    const command = new SignUpCommand(params);
-    const signUpResponse = await cognitoClient.send(command);
-    console.log("Usuário registrado com sucesso:", {
-      userSub: signUpResponse.UserSub,
-      userConfirmed: signUpResponse.UserConfirmed,
+    const response = await axios.post(`${apiUrl}/users`, {
+      email,
+      name,
     });
-    return signUpResponse;
-  } catch (error) {
-    console.error("Erro ao registrar usuário:", error);
+
+    console.log("Usuário registrado com sucesso:", response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error(
+      "Erro ao registrar usuário:",
+      error.response?.data || error.message
+    );
     throw error;
   }
 };
@@ -49,15 +27,20 @@ const signUpUser = async (
 // Função para testar o registro
 const testSignUp = async (): Promise<void> => {
   try {
-    // Você pode passar email e senha como argumentos da linha de comando
+    // Você pode passar email e nome como argumentos da linha de comando
     const email = process.argv[2] || "teste@exemplo.com";
-    const password = process.argv[3] || "Senha123!@#";
+    const name = process.argv[3] || "Usuário Teste";
 
-    console.log("Tentando registrar usuário:", email);
-    console.log("Usando Client ID:", process.env.USER_POOL_CLIENT_ID);
+    console.log("Tentando registrar usuário:");
+    console.log("Email:", email);
+    console.log("Nome:", name);
 
-    const result = await signUpUser(email, password);
+    const result = await signUpUser(email, name);
     console.log("Resultado completo:", result);
+    console.log(
+      "\nAgora verifique seu email para obter o código de verificação"
+    );
+    console.log("Use o script confirmUser.ts para completar o registro");
   } catch (error) {
     console.error("Erro no teste de registro:", error);
     process.exit(1);

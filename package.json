@@ -13,7 +13,8 @@
     "cognito:signup-user": "ts-node src/scripts/signUpUser.ts",
     "cognito:confirm-user": "ts-node src/scripts/confirmUser.ts",
     "test:api": "ts-node src/scripts/testApi.ts",
-    "api:url": "ts-node src/scripts/getApiUrl.ts"
+    "api:url": "ts-node src/scripts/getApiUrl.ts",
+    "dev": "serverless offline"
   },
   "keywords": [
     "aws",
@@ -29,7 +30,7 @@
     "@aws-sdk/client-dynamodb": "^3.714.0",
     "@aws-sdk/client-secrets-manager": "^3.716.0",
     "@aws-sdk/client-ses": "^3.716.0",
-    "@aws-sdk/lib-dynamodb": "^3.714.0",
+    "@aws-sdk/lib-dynamodb": "^3.716.0",
     "aws-jwt-verify": "^4.0.1",
     "axios": "^1.6.2",
     "dotenv": "^16.3.1",
@@ -43,9 +44,10 @@
     "@types/jest": "^29.0.0",
     "@types/node": "^18.19.68",
     "esbuild": "^0.24.2",
-    "serverless": "^3.0.0",
+    "serverless": "^3.38.0",
     "serverless-dotenv-plugin": "^6.0.0",
     "serverless-esbuild": "^1.54.6",
+    "serverless-offline": "^13.3.3",
     "ts-node": "^10.9.1",
     "typescript": "^5.7.2"
   }

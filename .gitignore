@@ -5,6 +5,7 @@ dist/
 # Arquivos de build
 .serverless/
 .build
+.esbuild
 
 # Arquivos de ambiente
 .env

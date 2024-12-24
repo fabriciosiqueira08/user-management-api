@@ -1,70 +1,149 @@
-# AWS Lambda Serverless CRUD Application
+# User Management API
 
-This repository serves as a learning project to demonstrate practical knowledge of serverless architecture using AWS Lambda. The project implements a basic CRUD (Create, Read, Update, Delete) application for user management.
-
----
-
-## Technologies Used
-
-- AWS Lambda
-- AWS DynamoDB
-- Serverless Framework
-- Node.js
-- AWS API Gateway
-- TypeScript
-
----
-
-## Purpose
-
-This project was created to practice and showcase real-world implementation of:
-
-- Serverless Architecture
-- AWS Cloud Services
-- RESTful API Design
-- Database Operations
-- Infrastructure as Code
-- Best Practices in Production Environment
-
----
+A secure user management API built with AWS Lambda, Cognito, and DynamoDB. Features MFA authentication and comprehensive user management capabilities.
 
 ## Features
 
-- User Management CRUD Operations
-- Serverless API Endpoints
-- DynamoDB Integration
-- Error Handling
-- Input Validation
+- User registration and authentication with MFA
+- JWT-based authentication
+- Role-based access control (Admin/User)
+- Rate limiting for security
+- Complete user CRUD operations
+- Token refresh mechanism
+- Secure logout
 
----
+## Tech Stack
+
+- Node.js with TypeScript
+- AWS Lambda
+- Amazon Cognito for authentication
+- DynamoDB for data storage
+- Serverless Framework
+- AWS IAM for security
+
+## Prerequisites
+
+- Node.js 18.x or later
+- AWS CLI configured
+- Serverless Framework CLI
+- An AWS account with appropriate permissions
 
 ## Setup
 
-1. **Install dependencies**:
+1. Clone the repository:
 
-   ```bash
-   npm install
-   ```
+```bash
+git clone [repository-url]
+cd user-management-api
+```
 
-2. **Deploy to AWS**:
-   ```bash
-   npm run deploy
-   ```
+2. Install dependencies:
 
----
+```bash
+npm install
+```
+
+3. Create a `.env` file with the following variables:
+
+```env
+USER_POOL_ID=your-cognito-user-pool-id
+USER_POOL_CLIENT_ID=your-cognito-client-id
+USERS_TABLE=your-dynamodb-table-name
+FRONTEND_URL=your-frontend-url
+```
+
+4. Deploy to AWS:
+
+```bash
+npm run deploy
+```
+
+## Authentication Flow
+
+1. **User Registration**
+
+   - Create user with email and name
+   - User receives verification code
+   - Complete registration with code and password
+
+2. **Login (with MFA)**
+
+   - Submit email and password
+   - Receive session token
+   - Submit MFA code
+   - Receive access tokens
+
+3. **Token Management**
+   - Use refresh token to get new access tokens
+   - Logout to invalidate tokens
+
+## API Endpoints
+
+### Public Endpoints
+
+- `POST /users` - Create new user
+- `POST /auth/complete-registration` - Complete user registration
+- `POST /auth/login` - Login (requires MFA)
+- `POST /auth/verify-mfa` - Verify MFA code
+- `POST /auth/refresh-token` - Refresh access token
+
+### Protected Endpoints (requires authentication)
+
+- `GET /users` - List all users (Admin only)
+- `GET /users/{id}` - Get user details
+- `PUT /users/{id}` - Update user
+- `DELETE /users/{id}` - Delete user
+- `POST /users/{id}/make-admin` - Make user admin (Admin only)
+- `POST /auth/logout` - Logout user
 
 ## Testing
 
-Import the Insomnia collection from the `docs` folder to test the API endpoints.
+1. Run the test script:
 
----
+```bash
+npm run test:api
+```
 
-## Available Endpoints
+2. Import the Insomnia collection (`insomnia.json`) to test endpoints manually.
 
-- **POST** `/users` - Create user
-- **GET** `/users` - List all users
-- **GET** `/users/{id}` - Get specific user
-- **PUT** `/users/{id}` - Update user
-- **DELETE** `/users/{id}` - Delete user
+## Security Features
 
-For detailed documentation, see [API Documentation](docs/README.md).
+- MFA required for all users
+- Rate limiting on authentication endpoints
+- JWT token validation
+- IAM role-based permissions
+- DynamoDB encryption at rest
+- CORS configuration
+- HTTP-only cookies for tokens
+
+## Development
+
+1. Run locally:
+
+```bash
+npm run dev
+```
+
+2. Run tests:
+
+```bash
+npm test
+```
+
+3. Build:
+
+```bash
+npm run build
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

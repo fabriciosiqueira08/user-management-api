@@ -1,0 +1,266 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-01-10T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v8.4.5",
+  "resources": [
+    {
+      "_id": "wrk_user_management_api",
+      "parentId": null,
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "name": "User Management API",
+      "description": "API de Gerenciamento de Usuários com AWS Lambda, Cognito e SES",
+      "scope": "collection",
+      "_type": "workspace"
+    },
+    {
+      "_id": "env_base",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "name": "Base Environment",
+      "data": {
+        "base_url": "https://your-api-id.execute-api.us-east-1.amazonaws.com/dev"
+      },
+      "_type": "environment"
+    },
+    {
+      "_id": "env_development",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "name": "Development",
+      "data": {
+        "base_url": "http://localhost:3000/dev"
+      },
+      "_type": "environment"
+    },
+    {
+      "_id": "req_create_user",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users",
+      "name": "1. Criar Usuário",
+      "description": "Cria um novo usuário no sistema. Uma senha temporária será enviada por email.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"email\": \"usuario@exemplo.com\",\n\t\"name\": \"Nome do Usuário\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_complete_registration",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/auth/complete-registration",
+      "name": "2. Completar Registro",
+      "description": "Completa o registro do usuário usando a senha temporária recebida por email.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"email\": \"usuario@exemplo.com\",\n\t\"verificationCode\": \"SENHA_TEMPORARIA\",\n\t\"name\": \"Nome do Usuário\",\n\t\"password\": \"NovaSenha123@\",\n\t\"confirmPassword\": \"NovaSenha123@\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_login",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/auth/login",
+      "name": "3. Login",
+      "description": "Inicia o processo de login. Um código MFA será enviado por email.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"email\": \"usuario@exemplo.com\",\n\t\"password\": \"NovaSenha123@\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_verify_mfa",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/auth/verify-mfa",
+      "name": "4. Verificar MFA",
+      "description": "Verifica o código MFA recebido por email para completar o login.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"session\": \"SESSION_TOKEN_DO_LOGIN\",\n\t\"code\": \"123456\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_refresh_token",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/auth/refresh-token",
+      "name": "5. Atualizar Token",
+      "description": "Atualiza o token de acesso usando o refresh token.",
+      "method": "POST",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"refreshToken\": \"SEU_REFRESH_TOKEN\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_logout",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/auth/logout",
+      "name": "6. Logout",
+      "description": "Realiza o logout do usuário, invalidando seus tokens.",
+      "method": "POST",
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_get_user",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users/USER_ID",
+      "name": "7. Buscar Usuário",
+      "description": "Busca os dados de um usuário específico.",
+      "method": "GET",
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_list_users",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users",
+      "name": "8. Listar Usuários",
+      "description": "Lista todos os usuários (requer permissão de admin).",
+      "method": "GET",
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_update_user",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users/USER_ID",
+      "name": "9. Atualizar Usuário",
+      "description": "Atualiza os dados de um usuário.",
+      "method": "PUT",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n\t\"name\": \"Novo Nome\",\n\t\"email\": \"novo@exemplo.com\"\n}"
+      },
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_delete_user",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users/USER_ID",
+      "name": "10. Deletar Usuário",
+      "description": "Remove um usuário do sistema.",
+      "method": "DELETE",
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    },
+    {
+      "_id": "req_make_admin",
+      "parentId": "wrk_user_management_api",
+      "modified": 1704844800000,
+      "created": 1704844800000,
+      "url": "{{ _.base_url }}/users/USER_ID/make-admin",
+      "name": "11. Tornar Admin",
+      "description": "Promove um usuário a administrador (requer permissão de admin).",
+      "method": "POST",
+      "parameters": [],
+      "headers": [
+        {
+          "name": "Authorization",
+          "value": "Bearer SEU_ACCESS_TOKEN"
+        }
+      ],
+      "_type": "request"
+    }
+  ]
+}
