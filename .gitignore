@@ -10,6 +10,8 @@ dist/
 # Arquivos de ambiente
 .env
 .env.*
+stack-event.json 
+insomnia.json
 
 # Logs
 *.log

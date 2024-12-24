@@ -22,6 +22,7 @@ interface LoginRequest {
 interface VerifyMFARequest {
   session: string;
   code: string;
+  email: string;
 }
 
 interface RefreshTokenRequest {
@@ -90,21 +91,21 @@ const verifyMFAHandler = async (
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> => {
   try {
-    const { session, code } = JSON.parse(
+    const { session, code, email } = JSON.parse(
       event.body || "{}"
     ) as VerifyMFARequest;
 
-    if (!session || !code) {
+    if (!session || !code || !email) {
       return {
         statusCode: 400,
         body: JSON.stringify({
-          message: "Sessão e código MFA são obrigatórios",
+          message: "Sessão, código MFA e email são obrigatórios",
         }),
       };
     }
 
     try {
-      const response = await verifyMFA(session, code);
+      const response = await verifyMFA(session, code, email);
 
       return {
         statusCode: 200,

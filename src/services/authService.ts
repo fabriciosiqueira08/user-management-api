@@ -5,9 +5,6 @@ import {
   AuthFlowType,
   ChallengeNameType,
 } from "@aws-sdk/client-cognito-identity-provider";
-import { sendMFACodeEmail } from "./emailService";
-import { generateMFACode } from "../utils/mfaUtils";
-import { storeMFACode, verifyMFACode } from "./mfaService";
 
 if (!process.env.USER_POOL_CLIENT_ID) {
   throw new Error("USER_POOL_CLIENT_ID não está definido");
@@ -22,7 +19,6 @@ const cognitoClient = new CognitoIdentityProviderClient({
 });
 
 const CLIENT_ID = process.env.USER_POOL_CLIENT_ID;
-const USER_POOL_ID = process.env.USER_POOL_ID;
 
 interface AuthResponse {
   session?: string;
@@ -31,6 +27,10 @@ interface AuthResponse {
     refreshToken?: string;
     idToken?: string;
   };
+  challengeName?: string;
+  challengeParameters?: {
+    [key: string]: string;
+  };
 }
 
 export const initiateAuth = async (
@@ -38,7 +38,8 @@ export const initiateAuth = async (
   password: string
 ): Promise<AuthResponse> => {
   try {
-    const params = {
+    // Primeiro, validar a senha usando USER_PASSWORD_AUTH
+    const passwordAuthParams = {
       AuthFlow: AuthFlowType.USER_PASSWORD_AUTH,
       ClientId: CLIENT_ID,
       AuthParameters: {
@@ -47,33 +48,28 @@ export const initiateAuth = async (
       },
     };
 
-    console.log("Iniciando autenticação para:", email);
+    console.log("Iniciando validação de senha para:", email);
 
     try {
-      const command = new InitiateAuthCommand(params);
-      const response = await cognitoClient.send(command);
+      const passwordCommand = new InitiateAuthCommand(passwordAuthParams);
+      const passwordResponse = await cognitoClient.send(passwordCommand);
 
-      console.log(
-        "Resposta da autenticação:",
-        JSON.stringify(response, null, 2)
-      );
+      // Se a senha foi validada com sucesso, iniciar o fluxo MFA
+      const mfaParams = {
+        AuthFlow: AuthFlowType.CUSTOM_AUTH,
+        ClientId: CLIENT_ID,
+        AuthParameters: {
+          USERNAME: email,
+        },
+      };
 
-      // Gerar e enviar código MFA apenas se a autenticação for bem-sucedida
-      const mfaCode = generateMFACode();
-      await sendMFACodeEmail(email, mfaCode);
-
-      // Armazenar o código MFA e retornar a sessão do Cognito
-      await storeMFACode(email, mfaCode);
+      const mfaCommand = new InitiateAuthCommand(mfaParams);
+      const mfaResponse = await cognitoClient.send(mfaCommand);
 
       return {
-        session: response.Session,
-        tokens: response.AuthenticationResult
-          ? {
-              accessToken: response.AuthenticationResult.AccessToken,
-              refreshToken: response.AuthenticationResult.RefreshToken,
-              idToken: response.AuthenticationResult.IdToken,
-            }
-          : undefined,
+        session: mfaResponse.Session,
+        challengeName: mfaResponse.ChallengeName,
+        challengeParameters: mfaResponse.ChallengeParameters,
       };
     } catch (authError: any) {
       console.error("Erro na autenticação:", {
@@ -102,24 +98,19 @@ export const initiateAuth = async (
 };
 
 export const verifyMFA = async (
-  sessionToken: string,
-  code: string
+  session: string,
+  code: string,
+  email: string
 ): Promise<AuthResponse> => {
   try {
-    // Verificar o código MFA e obter o email associado
-    const email = await verifyMFACode(sessionToken, code);
-    if (!email) {
-      throw new Error("Código MFA inválido ou expirado");
-    }
-
     const params = {
-      ChallengeName: ChallengeNameType.SOFTWARE_TOKEN_MFA,
+      ChallengeName: ChallengeNameType.CUSTOM_CHALLENGE,
       ClientId: CLIENT_ID,
       ChallengeResponses: {
+        ANSWER: code,
         USERNAME: email,
-        SOFTWARE_TOKEN_MFA_CODE: code,
       },
-      Session: sessionToken,
+      Session: session,
     };
 
     console.log(

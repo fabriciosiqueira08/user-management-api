@@ -1,0 +1,66 @@
+{
+  "Resources": {
+    "UserPool": {
+      "Type": "AWS::Cognito::UserPool",
+      "Properties": {
+        "UserPoolName": "user-management-api-dev-pool",
+        "LambdaConfig": {
+          "DefineAuthChallenge": "arn:aws:lambda:us-east-1:982081057005:function:user-management-api-dev-customAuthHandler",
+          "CreateAuthChallenge": "arn:aws:lambda:us-east-1:982081057005:function:user-management-api-dev-customAuthHandler",
+          "VerifyAuthChallengeResponse": "arn:aws:lambda:us-east-1:982081057005:function:user-management-api-dev-customAuthHandler"
+        },
+        "Policies": {
+          "PasswordPolicy": {
+            "MinimumLength": 8,
+            "RequireLowercase": true,
+            "RequireNumbers": true,
+            "RequireSymbols": true,
+            "RequireUppercase": true
+          }
+        },
+        "Schema": [
+          {
+            "Name": "email",
+            "AttributeDataType": "String",
+            "Mutable": true,
+            "Required": true
+          }
+        ],
+        "AutoVerifiedAttributes": ["email"],
+        "UsernameAttributes": ["email"]
+      }
+    },
+    "UserPoolClient": {
+      "Type": "AWS::Cognito::UserPoolClient",
+      "Properties": {
+        "UserPoolId": { "Ref": "UserPool" },
+        "ClientName": "user-management-client",
+        "GenerateSecret": false,
+        "ExplicitAuthFlows": [
+          "ALLOW_USER_PASSWORD_AUTH",
+          "ALLOW_CUSTOM_AUTH",
+          "ALLOW_REFRESH_TOKEN_AUTH"
+        ]
+      }
+    },
+    "LambdaInvokePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": "arn:aws:lambda:us-east-1:982081057005:function:user-management-api-dev-customAuthHandler",
+        "Principal": "cognito-idp.amazonaws.com",
+        "SourceArn": { "Fn::GetAtt": ["UserPool", "Arn"] }
+      }
+    }
+  },
+  "Outputs": {
+    "UserPoolId": {
+      "Description": "ID do User Pool",
+      "Value": { "Ref": "UserPool" }
+    },
+    "UserPoolClientId": {
+      "Description": "ID do Client do User Pool",
+      "Value": { "Ref": "UserPoolClient" }
+    }
+  }
+}

@@ -57,6 +57,9 @@ provider:
             - cognito-idp:AdminAddUserToGroup
             - cognito-idp:CreateGroup
             - cognito-idp:ListGroups
+            - cognito-idp:DefineAuthChallenge
+            - cognito-idp:CreateAuthChallenge
+            - cognito-idp:VerifyAuthChallenge
           Resource: arn:aws:cognito-idp:${self:provider.region}:*:userpool/${env:USER_POOL_ID}
 
         # Permissões SES
@@ -119,6 +122,11 @@ custom:
     logging: true
 
 functions:
+  customAuthHandler:
+    handler: src/handlers/customAuthHandler.handler
+    environment:
+      USER_POOL_ID: ${env:USER_POOL_ID}
+
   createUser:
     handler: src/handlers/createUser.handler
     events:
